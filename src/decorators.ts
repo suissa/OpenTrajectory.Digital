@@ -12,13 +12,11 @@ export function Trajectory(options: TrajectoryOptions | string = {}): ClassDecor
 /** Supports both TypeScript legacy decorators and the current Stage 3 decorator transform. */
 export function Track(options: TrackOptions | string = {}): (...args: unknown[]) => unknown {
   const normalized = typeof options === "string" ? { name: options } : options;
-  return (valueOrTarget: unknown, contextOrKey: unknown, legacyDescriptor?: PropertyDescriptor) => {
-    if (typeof valueOrTarget === "function" && isStage3(contextOrKey)) {
-      return wrap(valueOrTarget as Method, normalized, String(contextOrKey.name));
-    }
-    const property = legacyDescriptor;
+  return (...args: unknown[]) => {
+    const valueOrTarget = args[0]; const contextOrKey = args[1]; const property = args[2] as PropertyDescriptor | undefined;
+    if (typeof valueOrTarget === "function" && isStage3(contextOrKey)) return wrap(valueOrTarget as Method, normalized, String(contextOrKey.name));
     const original = property?.value as Method | undefined;
-    if (typeof original !== "function") throw new TypeError("@Track can decorate only methods");
+    if (typeof original !== "function" || !property) throw new TypeError("@Track can decorate only methods");
     property.value = wrap(original, normalized, String(contextOrKey));
     return property;
   };
@@ -30,8 +28,7 @@ function isStage3(value: unknown): value is Stage3Context {
 
 function wrap(original: Method, options: TrackOptions, fallbackName: string): Method {
   return function (this: unknown, ...args: unknown[]): Promise<unknown> {
-    const trackName = options.name ?? fallbackName;
-    const existing = TrajectoryContext.current();
+    const trackName = options.name ?? fallbackName; const existing = TrajectoryContext.current();
     if (existing) return existing.track({ ...options, name: trackName }, () => original.apply(this, args));
     const constructor = (this as { constructor?: { __openTrajectory?: string; name?: string } }).constructor;
     const trajectoryName = constructor?.__openTrajectory ?? constructor?.name ?? "decorated.trajectory";
