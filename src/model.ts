@@ -10,6 +10,8 @@ export interface TrackSnapshot {
 }
 export interface TrajectorySnapshot {
   id: string; name: string; correlationId?: string; startedAt: string; endedAt?: string; durationMs?: number;
+  /** Elapsed Node-process time when this Trajectory started. It exposes runner/transpiler cold-start separately from instrumented work. */
+  processStartupMs: number;
   status: "running" | "ok" | "error"; attributes: Attributes; tracks: TrackSnapshot[]; relations: Relation[];
 }
 export interface TrackOptions { name?: string; attributes?: Attributes; causes?: string[]; }
