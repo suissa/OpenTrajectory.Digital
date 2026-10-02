@@ -27,7 +27,7 @@ export class TrajectoryContext {
     track.expansions.push(expansion); context.exporters.forEach((exporter) => exporter.onExpansion?.(track.snapshot(), expansion));
   }
   static relate(fromTrackId: string, toTrackId: string, kind: RelationKind, attributes?: Attributes): void { contexts.getStore()?.relate(fromTrackId, toTrackId, kind, attributes); }
-  snapshot(): TrajectorySnapshot { return { id: this.id, name: this.name, correlationId: this.options.correlationId, startedAt: this.startedAt, endedAt: this.endedAt, durationMs: this.durationMs, status: this.status, attributes: this.options.attributes ?? {}, tracks: this.tracks.map((track) => track.snapshot()), relations: [...this.relations] }; }
+  snapshot(): TrajectorySnapshot { return { id: this.id, name: this.name, correlationId: this.options.correlationId, startedAt: this.startedAt, endedAt: this.endedAt, durationMs: this.durationMs, processStartupMs: Math.round(this.startedAtMs), status: this.status, attributes: this.options.attributes ?? {}, tracks: this.tracks.map((track) => track.snapshot()), relations: [...this.relations] }; }
   async run<T>(callback: () => T | Promise<T>): Promise<T> {
     this.exporters.forEach((exporter) => exporter.onTrajectoryStarted?.(this.snapshot()));
     try { const result = await contexts.run(this, callback); this.status = "ok"; return result; }
