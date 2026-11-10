@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { TrajectoryExporter } from "./exporter.js";
 import type {
   Expansion,
@@ -94,7 +93,7 @@ export class TrajectoryStreamHub {
   private closed = false;
 
   constructor(options: TrajectoryStreamHubOptions = {}) {
-    this.sessionId = options.sessionId ?? randomUUID();
+    this.sessionId = options.sessionId ?? createSessionId();
     this.maxBufferEvents = options.maxBufferEvents ?? 2_048;
     this.maxQueuedEvents = options.maxQueuedEvents ?? 256;
     this.maxSnapshots = options.maxSnapshots ?? 512;
@@ -492,4 +491,13 @@ export class TrajectoryStreamStore {
     relations.push(clone(relation));
     this.snapshots.set(trajectoryId, { ...current, relations });
   }
+}
+
+function createSessionId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === "function") {
+    return cryptoApi.randomUUID();
+  }
+  // Session IDs are cursors, not credentials; this fallback is not an auth token.
+  return "session-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
 }
