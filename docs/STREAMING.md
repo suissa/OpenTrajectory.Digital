@@ -50,14 +50,15 @@ Both terminal and browser clients should use the same reducer and projection fun
 
 ```ts
 import {
+  TrajectoryStreamHub,
   TrajectoryStreamStore,
   projectTrajectorySnapshot
 } from "@opentrajectory/digital";
 
+const hub = new TrajectoryStreamHub();
+const connection = hub.connect(); // For a remote client, receive frames from the WebSocket instead.
 const store = new TrajectoryStreamStore();
 store.apply(connection.initial);
-
-const connection = hub.connect();
 store.apply(connection.initial);
 while (true) {
   const frame = await connection.subscription.next();
