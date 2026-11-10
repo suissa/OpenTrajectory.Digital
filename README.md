@@ -1,98 +1,110 @@
 # OpenTrajectory.Digital
 
-Biblioteca TypeScript para depurar execução como uma estrutura temporal e causal — usando um vocabulário semântico que pode ser repetido em outras linguagens.
+SDK TypeScript para instrumentar execuções como uma estrutura temporal e causal. Uma **Trajectory** agrupa **Tracks** hierárquicos; cada Track pode registrar **Expansions** (marcos) e relações causais.
 
-| OpenTelemetry | OpenTrajectory |
+| Conceito | Contrato no SDK |
 | --- | --- |
-| Trace | **Trajectory** |
-| Span | **Track** |
-| Event | **Expansion** |
-| Trace ID | `trajectory.id` |
-| Correlation ID | `correlationId` |
+| Trajectory | Execução observada, com correlation ID opcional |
+| Track | Unidade de trabalho dentro de uma Trajectory |
+| Expansion | Registro de um marco ocorrido dentro de um Track |
+| Expand | Função que registra uma Expansion no Track ativo |
+| Relation | Relação causal ou de dependência entre Tracks |
 
-Uma **Trajectory** contém **Tracks** hierárquicos. Cada Track registra **Expansions** (marcos que explicam o que foi acontecendo) e relações causais prontas para Causal-Topological: `causes`, `depends_on`, `expands`, `follows`, `derives_from`.
+**Expansion** é o dado registrado. **Expand** é a operação que cria esse registro. Os nomes são intencionalmente distintos; nenhum deles é alias do outro.
 
-## Rodar agora
+## Instalação e validação
 
-~~~bash
+```bash
+npm install @opentrajectory/digital
+```
+
+Para validar o repositório:
+
+```bash
 npm install
+npm run check
+npm run build
+npm test
 npm run example
-~~~
+# ou tudo de uma vez:
+npm run ci
+```
 
-A saída mostra cada início, expansão, término e um relatório final, sem banco:
+O SDK requer Node.js 20 ou superior. Os exemplos e snippets abaixo usam imports do pacote publicado.
 
-~~~text
-◉ TRAJECTORY support.debug.session [...] correlation=wa-...-msg-42
-▶ intake.message
-  ↳ message.received +0ms
-  ▶ classify.intent
-    ↳ model.prompt.composed +0ms
-    ↳ intent.resolved +1ms
-  ✓ classify.intent 1ms
-✓ intake.message 2ms
-■ REPORT support.debug.session: ok, 2 tracks, 0 causal links, 2ms
-~~~
+## Instrumentação com decorators
 
-## Decorators
+Configure `experimentalDecorators: true` no `tsconfig.json` para o modo legacy do TypeScript. `@Track` também reconhece o formato de decorators Stage 3.
 
-Ative `experimentalDecorators` no `tsconfig.json`.
-
-~~~ts
-import { Trajectory, Track, Expand } from "@opentrajectory/digital";
+```ts
+import { Expand, Track, Trajectory } from "@opentrajectory/digital";
 
 @Trajectory({ name: "customer-support.request" })
 class CustomerSupportFlow {
   @Track({ name: "intake.message" })
-  async intake(message: string) {
+  async intake(message: string): Promise<void> {
     Expand("message.received", { characters: message.length });
     await this.classify(message);
   }
 
   @Track("classify.intent")
-  async classify(message: string) {
-    Expand("intent.resolved", { intent: "billing.question", confidence: 0.92 });
+  async classify(message: string): Promise<void> {
+    Expand("intent.resolved", { intent: "billing.question" });
+    void message;
   }
 }
-~~~
 
-Se um método decorado é chamado sem uma Trajectory ativa, ele inicia uma automaticamente. Se já houver uma, o método vira um Track filho; a árvore acompanha o caminho real da execução assíncrona.
+await new CustomerSupportFlow().intake("Onde está meu comprovante?");
+```
 
-## Trajectory explícita e correlation ID
+Quando um método decorado é chamado sem contexto ativo, o SDK cria uma Trajectory automaticamente. Dentro de uma Trajectory existente, ele cria um Track filho. Métodos síncronos continuam síncronos; métodos que retornam Promise continuam assíncronos.
 
-~~~ts
+## Execução explícita, exporters e correlation ID
+
+```ts
+import {
+  ConsoleTrajectoryExporter,
+  TrajectoryRuntime
+} from "@opentrajectory/digital";
+
 const runtime = new TrajectoryRuntime({
   exporters: [new ConsoleTrajectoryExporter()]
 });
 
 await runtime.trajectory(
-  { name: "support.debug", correlationId: incomingMessage.id },
-  () => service.handle(incomingMessage)
+  {
+    name: "support.debug",
+    correlationId: "request-42",
+    attributes: { channel: "whatsapp" }
+  },
+  () => runtime.current()!.track("handle.message", () => {
+    // código instrumentado
+  })
 );
-~~~
+```
 
-## Adapter OpenTelemetry / Grafana
+O runtime propaga o contexto através de operações assíncronas usando `AsyncLocalStorage`. Trajectories concorrentes mantêm contextos isolados. Consulte [a referência da API](docs/API.md) para os contratos completos, lifecycle e limitações.
 
-O adaptador usa interfaces estruturais: não obriga instalar OpenTelemetry, mas aceita o mesmo `Tracer` que seu projeto já fornece para OTLP Collector, Grafana ou Tempo.
+## OpenTelemetry
 
-~~~ts
+O adaptador aceita um tracer estruturalmente compatível; não adiciona dependência obrigatória de OpenTelemetry ao core.
+
+```ts
 import { trace } from "@opentelemetry/api";
-import { OpenTelemetryAdapter, TrajectoryRuntime } from "@opentrajectory/digital";
+import {
+  OpenTelemetryAdapter,
+  TrajectoryRuntime
+} from "@opentrajectory/digital";
 
 const runtime = new TrajectoryRuntime({
   exporters: [new OpenTelemetryAdapter(trace.getTracer("my-service"))]
 });
-~~~
+```
 
-Cada Track gera um span OTel com IDs, pai, profundidade, sequência, duração e Expansions como atributos. O Console exporter continua ideal para rodar local e enxergar o passo a passo.
+## Escopo atual e roadmap
 
-## Contrato policromático
+Implementado: Trajectory, Track, Expansion/Expand, relações entre Tracks, decorators, exporters de console e OpenTelemetry e snapshots.
 
-A primeira implementação é TypeScript. Estes nomes serão o contrato semântico dos SDKs futuros:
+Reservado para versões futuras: **Destination**, **Journey** e **Step**. Esses nomes não são classes, tipos ou APIs exportadas nesta versão. Não devem ser usados como se já fossem implementados.
 
-- **Trajectory**: macroexecução espacial/temporal.
-- **Track**: unidade micro de execução; equivale a span.
-- **Expansion**: fato incremental dentro do Track.
-- **Destination**: resultado/objetivo futuro (reservado).
-- **Journey** e **Step**: aliases de fluxo previstos para SDKs que prefiram o vocabulário de jornada.
-
-O core não armazena payloads: somente nomes e atributos escolhidos por você. Persistência e projeções para o banco causal-topológico serão exporters adicionais, sem alterar decorators, API ou estrutura do evento.
+O SDK não persiste snapshots nem payloads de negócio. A integração com armazenamento é responsabilidade de exporters ou de componentes externos.
