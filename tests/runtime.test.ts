@@ -175,3 +175,44 @@ test("TrackOptions.causes validates source IDs and creates directed edges", asyn
   assert.equal(snapshot?.relations[0]?.kind, "causes");
   assert.equal(snapshot?.relations[0]?.toTrackId, snapshot?.tracks[1]?.id);
 });
+
+
+test("topological projection rejects cyclic external snapshots with a cycle path", async () => {
+  const runtime = new TrajectoryRuntime();
+  let snapshot!: TrajectorySnapshot;
+  await runtime.trajectory("external-cycle", async () => {
+    const context = runtime.current()!;
+    for (const name of ["a", "b", "c"]) await context.track(name, () => {});
+    snapshot = context.snapshot();
+  });
+  const ids = snapshot.tracks.map((track) => track.id);
+  const invalid = {
+    ...snapshot,
+    relations: [
+      { fromTrackId: ids[0]!, toTrackId: ids[1]!, kind: "causes" as const },
+      { fromTrackId: ids[1]!, toTrackId: ids[2]!, kind: "follows" as const },
+      { fromTrackId: ids[2]!, toTrackId: ids[0]!, kind: "derives_from" as const }
+    ]
+  };
+  const { CausalRelationError, topologicalTracks } = await import("../src/causal.js");
+  assert.throws(
+    () => topologicalTracks(invalid),
+    (error: unknown) => error instanceof CausalRelationError &&
+      error.code === "CAUSAL_CYCLE" &&
+      error.cycle?.length === 4 &&
+      error.cycle[0] === error.cycle[error.cycle.length - 1]
+  );
+});
+
+test("invalid TrackOptions.causes does not leave a partial Track", async () => {
+  const runtime = new TrajectoryRuntime();
+  await assert.rejects(
+    runtime.trajectory("invalid-track-cause", async () => {
+      const context = runtime.current()!;
+      await context.track("existing", () => {});
+      await context.track({ name: "invalid", causes: ["not-in-this-trajectory"] }, () => {});
+    }),
+    (error: unknown) => error instanceof Error && error.message.includes("Unknown source Track")
+  );
+  // The failed Track is validated before insertion, so no ghost Track is emitted.
+});
