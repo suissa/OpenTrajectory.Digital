@@ -41,7 +41,7 @@ Esta referência descreve a superfície exportada por `src/index.ts` na versão 
 | `TrajectoryContext.track(options, callback)` | Method | Cria Track e retorna Promise. |
 | `TrajectoryContext.trackMaybe(options, callback)` | Method | Cria Track preservando retorno sync/async. |
 | `TrajectoryContext.relate(from, to, kind, attributes?)` | Method | Adiciona uma Relation ao snapshot da Trajectory. |
-| `TrajectoryContext.snapshot()` | Method | Produz snapshot com cópias rasas de atributos e relações. |
+| `TrajectoryContext.snapshot()` | Method | Produz snapshot com cópias defensivas de atributos, Expansions, erros e relações. |
 | `TrajectoryContext.topologicalTracks()` | Method | Retorna Tracks em projeção topológica determinística sem reordenar o snapshot original. |
 
 Os métodos `runMaybe` e `trackMaybe` existem para a implementação dos decorators preservar o contrato síncrono. Para uso normal, prefira `trajectory` e `track`, que retornam Promise.
@@ -50,7 +50,7 @@ Os métodos `runMaybe` e `trackMaybe` existem para a implementação dos decorat
 
 | Símbolo | Tipo | Contrato |
 | --- | --- | --- |
-| `TrajectoryExporter` | Interface | Hooks opcionais para início/fim de Trajectory e Track e registro de Expansion. |
+| `TrajectoryExporter` | Interface | Hooks opcionais para início/fim de Trajectory e Track, Expansion e Relation. |
 | `ConsoleTrajectoryExporter` | Class | Escreve lifecycle e resumo no console. |
 | `OpenTelemetryAdapter` | Class | Adapta Tracks e Expansions para spans através de um tracer compatível. |
 | `OpenTelemetryTracerLike` | Interface | Subconjunto estrutural de tracer necessário pelo adapter. |
@@ -99,8 +99,12 @@ O encerramento dos spans usa `finally`: falhas ao definir status ou registrar ex
 | `TrackSnapshot` | Estado observável de um Track, incluindo hierarquia, duração, atributos, expansions e erro. |
 | `TrajectorySnapshot` | Estado observável da Trajectory, incluindo correlation ID, Tracks e relações. |
 | `TrackOptions` | Opções de nome, atributos e IDs de causas para criar um Track. |
-| `TrajectoryOptions` | Opções de nome, correlation ID, atributos e autoReport. |
-| `RuntimeOptions` | Opções do runtime, incluindo exporters e autoReport. |
+| `TrajectoryOptions` | Opções de nome, correlation ID e atributos. |
+| `RuntimeOptions` | Opções do runtime: exporters, relógio injetável e limites opcionais. |
+| `TrajectoryClock` | Interface de relógio com tempo monotônico e timestamp ISO-8601 injetáveis. |
+| `TrajectoryLimits` | Limites opcionais de bytes por mapa de atributos, Expansions por Track e profundidade. |
+| `TrajectoryLimitError` | Erro tipado lançado quando um limite configurado é excedido. |
+| `TrajectoryLimitCode` | Códigos de overflow de limites. |
 
 ## Lifecycle
 
@@ -110,7 +114,9 @@ O encerramento dos spans usa `finally`: falhas ao definir status ou registrar ex
 4. Ao concluir, o Track recebe `ok` ou `error`, timestamps e duração; emite `onTrackEnded`.
 5. Ao concluir a callback principal, a Trajectory recebe `ok` ou `error`, timestamps e duração; emite `onTrajectoryEnded`.
 
-Erros são propagados ao chamador. O Track registra nome e mensagem do erro. `startedAt`, `endedAt` e `Expansion.timestamp` são ISO-8601; durações e offsets são milissegundos monotônicos arredondados.
+Erros de callback são propagados ao chamador. Cada hook de exporter é executado mesmo se outro exporter falhar; erros de hooks são agregados em `AggregateError`. A execução é finalizada antes de o erro de exportação ser propagado. Se o callback e a finalização falharem, ambos os erros são preservados no AggregateError. Falhas em hooks de início também acionam os hooks de fim correspondentes para exporters que já tenham aberto recursos.
+
+O Track registra nome e mensagem do erro. `startedAt`, `endedAt` e `Expansion.timestamp` são ISO-8601; durações e offsets são milissegundos monotônicos arredondados. `processUptimeMs` é o tempo monotônico desde o time origin do processo Node.js até o início da Trajectory. `processStartupMs` é um alias legado depreciado com o mesmo valor; não mede a duração de inicialização do processo.
 
 ## Relações causais
 
@@ -132,10 +138,26 @@ Erros de validação lançam `CausalRelationError`, que inclui `code`, IDs envol
 
 `TrajectoryContext.topologicalTracks()` e a função exportada `topologicalTracks(snapshot)` retornam uma projeção topológica determinística. Desempates usam `sequence` original e depois ID. A projeção não altera `snapshot.tracks`: a ordem temporal original continua disponível. Snapshots externos inválidos também são verificados durante a projeção e ciclos causam `CausalRelationError`.
 
+## Snapshots, exporters e limites
+
+`snapshot()` cria cópias defensivas de Tracks, atributos, Expansions, erros e relações. Cada exporter recebe sua própria cópia nos hooks; alterar um snapshot ou payload recebido não altera o estado interno nem o que outro exporter recebe. `Attributes` aceita apenas valores primitivos (`string`, `number`, `boolean` ou `null`), portanto a cópia dos mapas é suficiente.
+
+Todos os exporters são chamados para cada hook, mesmo quando um deles lança uma exceção. As exceções são agregadas em `AggregateError` depois que o runtime tenta executar os hooks de finalização. Se a callback e um hook de finalização falharem, ambos os erros são preservados. Hooks são síncronos; exporters não devem iniciar trabalho assíncrono sem gerenciar sua própria conclusão.
+
+A opção `autoReport` foi removida de `TrajectoryOptions` e `RuntimeOptions`: existia no tipo, mas não tinha comportamento implementado. O relatório continua sendo responsabilidade explícita dos exporters, como `ConsoleTrajectoryExporter`.
+
+`RuntimeOptions.clock` permite injetar `TrajectoryClock` para testes determinísticos. `monotonicNow()` mede durações/offsets; `wallTime()` gera timestamps ISO-8601. O relógio padrão usa `performance.now()` e `Date`.
+
+Os limites são opcionais e, por padrão, não impõem restrições adicionais (compatibilidade retroativa):
+- `maxAttributeBytes`: máximo de bytes UTF-8 de cada mapa de atributos individual, incluindo atributos da Trajectory, Track, Expansion e Relation.
+- `maxExpansionsPerTrack`: máximo de Expansions por Track.
+- `maxTrackDepth`: profundidade máxima; Tracks raiz têm profundidade zero.
+
+Os limites são verificados antes da mutação correspondente. Overflow lança `TrajectoryLimitError` com `code`, `limit` e `actual`; o runtime não trunca nem descarta dados silenciosamente. Valores de configuração precisam ser inteiros não negativos.
+
 ## Concorrência e isolamento
 
-O contexto ativo é propagado por `AsyncLocalStorage`, portanto chamadas assíncronas e Trajectories concorrentes mantêm seus próprios contextos. A lista de Tracks e relações é acumulada na instância da Trajectory. Snapshots copiam os objetos de atributos de primeiro nível; valores aninhados não são permitidos pelo tipo `Attributes`.
-
+O contexto ativo é propagado por `AsyncLocalStorage`, portanto chamadas assíncronas e Trajectories concorrentes mantêm seus próprios contextos. A lista de Tracks e relações é acumulada na instância da Trajectory.
 ## Compatibilidade e depreciação
 
 Não há renomeação nem depreciação de `Expansion` ou `Expand`: são conceitos diferentes e complementares. Símbolos exportados são considerados API pública. Mudanças incompatíveis devem ser anunciadas em release notes e acompanhadas por período de depreciação quando tecnicamente viável.
