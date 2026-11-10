@@ -38,7 +38,7 @@ export interface TrajectoryStreamSnapshotFrame {
   version: 1;
   sessionId: string;
   sequence: number;
-  reason: "initial" | "replay-window-expired" | "cursor-ahead" | "backpressure";
+  reason: "initial" | "replay-window-expired" | "cursor-ahead" | "session-changed" | "backpressure";
   trajectories: TrajectorySnapshot[];
 }
 
@@ -109,7 +109,7 @@ export class TrajectoryStreamHub {
     }
   }
 
-  connect(afterSequence?: number): TrajectoryStreamConnection {
+  connect(afterSequence?: number, sessionId?: string): TrajectoryStreamConnection {
     if (this.closed) throw new Error("TrajectoryStreamHub is closed.");
     if (afterSequence !== undefined &&
       (!Number.isSafeInteger(afterSequence) || afterSequence < 0)) {
@@ -123,7 +123,9 @@ export class TrajectoryStreamHub {
     this.subscriptions.add(subscription);
 
     const oldestSequence = this.events[0]?.sequence ?? this.sequence + 1;
+    const sameSession = afterSequence === undefined || sessionId === this.sessionId;
     const replayAvailable = afterSequence !== undefined &&
+      sameSession &&
       afterSequence <= this.sequence &&
       afterSequence >= oldestSequence - 1;
 
@@ -143,9 +145,11 @@ export class TrajectoryStreamHub {
         : this.snapshotFrame(
             afterSequence === undefined
               ? "initial"
-              : afterSequence > this.sequence
-                ? "cursor-ahead"
-                : "replay-window-expired"
+              : !sameSession
+                ? "session-changed"
+                : afterSequence > this.sequence
+                  ? "cursor-ahead"
+                  : "replay-window-expired"
           );
 
     return { initial, subscription };
@@ -382,6 +386,16 @@ export function projectTrajectorySnapshot(
 /** Stateful reducer shared by TUI and Web clients. */
 export class TrajectoryStreamStore {
   private readonly snapshots = new Map<string, TrajectorySnapshot>();
+  private currentSessionId?: string;
+  private sequence = 0;
+
+  get sessionId(): string | undefined {
+    return this.currentSessionId;
+  }
+
+  get lastSequence(): number {
+    return this.sequence;
+  }
 
   apply(frame: TrajectoryStreamFrame): void {
     if (frame.kind === "snapshot") {
@@ -389,13 +403,20 @@ export class TrajectoryStreamStore {
       for (const snapshot of frame.trajectories) {
         this.snapshots.set(snapshot.id, clone(snapshot));
       }
+      this.currentSessionId = frame.sessionId;
+      this.sequence = frame.sequence;
       return;
     }
     if (frame.kind === "replay") {
-      for (const event of frame.events) this.applyEvent(event);
+      this.assertSession(frame.sessionId);
+      if (frame.fromSequence !== this.sequence + 1) {
+        throw new Error("Stream replay gap: a fresh snapshot is required.");
+      }
+      for (const event of frame.events) this.applyEventWithSequence(event);
+      this.sequence = frame.toSequence;
       return;
     }
-    this.applyEvent(frame.event);
+    this.applyEventWithSequence(frame.event);
   }
 
   getSnapshot(trajectoryId: string): TrajectorySnapshot | undefined {
@@ -411,6 +432,23 @@ export class TrajectoryStreamStore {
     return this.getSnapshots()
       .sort((left, right) => left.startedAt.localeCompare(right.startedAt) || left.id.localeCompare(right.id))
       .map(projectTrajectorySnapshot);
+  }
+
+  private assertSession(sessionId: string): void {
+    if (this.currentSessionId && this.currentSessionId !== sessionId) {
+      throw new Error("Stream session changed: a fresh snapshot is required.");
+    }
+    this.currentSessionId ??= sessionId;
+  }
+
+  private applyEventWithSequence(event: TrajectoryStreamEvent): void {
+    this.assertSession(event.sessionId);
+    if (event.sequence <= this.sequence) return;
+    if (event.sequence !== this.sequence + 1) {
+      throw new Error("Stream sequence gap: a fresh snapshot is required.");
+    }
+    this.applyEvent(event);
+    this.sequence = event.sequence;
   }
 
   private applyEvent(event: TrajectoryStreamEvent): void {
