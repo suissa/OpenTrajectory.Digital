@@ -60,7 +60,7 @@ Os métodos `runMaybe` e `trackMaybe` existem para a implementação dos decorat
 | `OpenTelemetrySpanLinkLike` | Interface | Link causal estrutural enviado na criação de spans. |
 | `OpenTelemetrySpanOptionsLike` | Interface | Opções estruturais para atributos, links e timestamp inicial. |
 
-Hooks de exporter são síncronos. Exceções lançadas por um exporter não são isoladas pelo runtime e podem interromper a execução instrumentada.
+Hooks de exporter são síncronos; a política de falhas e encerramento está descrita na seção “Snapshots, exporters e limites”.
 
 O `OpenTelemetryAdapter` cria um span raiz para cada Trajectory e spans para Tracks. Inclui IDs OpenTrajectory, `correlationId`, atributos, timestamps, duração, status e exceções. Expansions são exportadas como span events quando `addEvent` está disponível; caso contrário, são representadas por atributos.
 
