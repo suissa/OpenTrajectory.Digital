@@ -77,6 +77,12 @@ try {
   const consumerSource = `import {
   Expand,
   TrajectoryRuntime,
+  TrajectoryStreamExporter,
+  TrajectoryStreamHub,
+  TrajectoryStreamStore,
+  TrajectoryWebSocketServer,
+  projectTrajectorySnapshot,
+  type WebSocketServerFactory,
   type TrajectoryClock,
   type TrajectoryLimits,
   type TrajectorySnapshot
@@ -91,9 +97,21 @@ const limits: TrajectoryLimits = {
   maxExpansionsPerTrack: 5,
   maxTrackDepth: 2
 };
-const runtime = new TrajectoryRuntime({ clock, limits });
+const hub = new TrajectoryStreamHub();
+const runtime = new TrajectoryRuntime({
+  clock,
+  limits,
+  exporters: [new TrajectoryStreamExporter(hub)]
+});
+const store = new TrajectoryStreamStore();
 const snapshot: TrajectorySnapshot | undefined = runtime.current()?.snapshot();
-void snapshot;
+if (snapshot) projectTrajectorySnapshot(snapshot);
+const factory: WebSocketServerFactory = {
+  create: () => ({ on: () => undefined, close: (callback) => callback?.() })
+};
+const webSocketServer = new TrajectoryWebSocketServer(hub, factory);
+void store;
+void webSocketServer;
 Expand("consumer.typecheck");
 `;
   writeFileSync(join(consumer, "consumer.mts"), consumerSource);
@@ -115,11 +133,24 @@ Expand("consumer.typecheck");
     stdio: "inherit"
   });
 
-  const runtimeCheck = `import { Expand, TrajectoryRuntime } from "@opentrajectory/digital";
-const runtime = new TrajectoryRuntime();
+  const runtimeCheck = `import {
+  Expand,
+  TrajectoryRuntime,
+  TrajectoryStreamExporter,
+  TrajectoryStreamHub,
+  TrajectoryStreamStore
+} from "@opentrajectory/digital";
+const hub = new TrajectoryStreamHub();
+const store = new TrajectoryStreamStore();
+const runtime = new TrajectoryRuntime({
+  exporters: [new TrajectoryStreamExporter(hub)]
+});
+const connection = hub.connect();
+store.apply(connection.initial);
 await runtime.trajectory("tarball.consumer", async () => {
   await runtime.current().track("consumer.track", () => Expand("consumer.ready"));
 });
+connection.subscription.close();
 `;
   execFileSync(process.execPath, ["--input-type=module", "-e", runtimeCheck], {
     cwd: consumer,
