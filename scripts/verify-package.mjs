@@ -80,13 +80,19 @@ try {
   TrajectoryStreamExporter,
   TrajectoryStreamHub,
   TrajectoryStreamStore,
-  TrajectoryWebSocketServer,
   projectTrajectorySnapshot,
-  type WebSocketServerFactory,
   type TrajectoryClock,
   type TrajectoryLimits,
   type TrajectorySnapshot
 } from "@opentrajectory/digital";
+import {
+  TrajectoryWebSocketServer,
+  type WebSocketServerFactory
+} from "@opentrajectory/digital/websocket";
+import {
+  TrajectoryStreamHub as BrowserStreamHub,
+  TrajectoryStreamStore as BrowserStreamStore
+} from "@opentrajectory/digital/streaming";
 
 const clock: TrajectoryClock = {
   monotonicNow: () => 1,
@@ -104,6 +110,8 @@ const runtime = new TrajectoryRuntime({
   exporters: [new TrajectoryStreamExporter(hub)]
 });
 const store = new TrajectoryStreamStore();
+const browserHub = new BrowserStreamHub();
+const browserStore = new BrowserStreamStore();
 const snapshot: TrajectorySnapshot | undefined = runtime.current()?.snapshot();
 if (snapshot) projectTrajectorySnapshot(snapshot);
 const factory: WebSocketServerFactory = {
@@ -111,6 +119,8 @@ const factory: WebSocketServerFactory = {
 };
 const webSocketServer = new TrajectoryWebSocketServer(hub, factory);
 void store;
+void browserHub;
+void browserStore;
 void webSocketServer;
 Expand("consumer.typecheck");
 `;
