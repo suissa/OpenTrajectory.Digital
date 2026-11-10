@@ -90,16 +90,34 @@ O runtime propaga o contexto através de operações assíncronas usando `AsyncL
 O adaptador aceita um tracer estruturalmente compatível; não adiciona dependência obrigatória de OpenTelemetry ao core.
 
 ```ts
-import { trace } from "@opentelemetry/api";
+import { context, trace } from "@opentelemetry/api";
 import {
   OpenTelemetryAdapter,
   TrajectoryRuntime
 } from "@opentrajectory/digital";
 
+const adapter = new OpenTelemetryAdapter(trace.getTracer("my-service"), {
+  active: () => context.active(),
+  setSpan: (active, span) => trace.setSpan(active, span as never)
+});
+const runtime = new TrajectoryRuntime({ exporters: [adapter] });
+```
+
+## Limites e relógio
+
+Por padrão, os limites são ilimitados. Podem ser configurados por runtime:
+
+```ts
 const runtime = new TrajectoryRuntime({
-  exporters: [new OpenTelemetryAdapter(trace.getTracer("my-service"))]
+  limits: {
+    maxAttributeBytes: 8_192,
+    maxExpansionsPerTrack: 100,
+    maxTrackDepth: 12
+  }
 });
 ```
+
+Exceder um limite lança `TrajectoryLimitError`; o runtime não trunca dados silenciosamente. Para testes determinísticos, `RuntimeOptions.clock` aceita um relógio injetável. A métrica `processUptimeMs` mede o tempo desde o início do processo até o começo da Trajectory; `processStartupMs` permanece apenas como alias legado depreciado.
 
 ## Escopo atual e roadmap
 
