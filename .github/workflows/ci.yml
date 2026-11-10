@@ -23,4 +23,10 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - run: npm install
+      - uses: actions/upload-artifact@v4
+        if: ${{ matrix.node-version == 22 }}
+        with:
+          name: generated-npm-lock
+          path: package-lock.json
+          if-no-files-found: error
       - run: npm run ci
