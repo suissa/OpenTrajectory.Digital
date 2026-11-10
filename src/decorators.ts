@@ -26,13 +26,19 @@ function isStage3(value: unknown): value is Stage3Context {
   return typeof value === "object" && value !== null && "kind" in value;
 }
 
+/** Preserve the decorated method's sync/async contract and its original return value. */
 function wrap(original: Method, options: TrackOptions, fallbackName: string): Method {
-  return function (this: unknown, ...args: unknown[]): Promise<unknown> {
-    const trackName = options.name ?? fallbackName; const existing = TrajectoryContext.current();
-    if (existing) return existing.track({ ...options, name: trackName }, () => original.apply(this, args));
+  return function (this: unknown, ...args: unknown[]): unknown {
+    const trackName = options.name ?? fallbackName;
+    const callback = () => original.apply(this, args);
+    const existing = TrajectoryContext.current();
+    if (existing) return existing.trackMaybe({ ...options, name: trackName }, callback);
+
     const constructor = (this as { constructor?: { __openTrajectory?: string; name?: string } }).constructor;
     const trajectoryName = constructor?.__openTrajectory ?? constructor?.name ?? "decorated.trajectory";
-    return trajectoryRuntime.trajectory(trajectoryName, () => TrajectoryContext.current()!.track({ ...options, name: trackName }, () => original.apply(this, args)));
+    return trajectoryRuntime.trajectoryMaybe(trajectoryName, () =>
+      TrajectoryContext.current()!.trackMaybe({ ...options, name: trackName }, callback)
+    );
   };
 }
 
