@@ -183,7 +183,7 @@ Não há renomeação nem depreciação de `Expansion` ou `Expand`: são conceit
 
 ## Roadmap — não disponível nesta versão
 
-`Destination`, `Journey` e `Step` são termos reservados para possíveis modelos ou aliases futuros. Não são exportados e não possuem contrato implementado.
+`Destination` é um resultado esperado ou observado associado à Trajectory. O snapshot pode carregá-lo em `destination` com `id`, `label`, `status` (`expected`, `satisfied` ou `failed`) e `attributes`. `Journey` e `Step` permanecem reservados para possíveis modelos futuros.
 
 
 ## Streaming realtime
