@@ -351,9 +351,10 @@ export function projectTrajectorySnapshot(
   snapshot: TrajectorySnapshot
 ): TrajectoryProjection {
   const tracksInSequence = [...snapshot.tracks].sort(compareTracks);
-  const nodes = new Map<string, TrajectoryTrackNode>(
-    tracksInSequence.map((track) => [track.id, { track: clone(track), children: [] }])
-  );
+  const nodes = new Map<string, TrajectoryTrackNode>();
+  for (const track of tracksInSequence) {
+    nodes.set(track.id, { track: clone(track), children: [] });
+  }
   const roots: TrajectoryTrackNode[] = [];
 
   for (const track of tracksInSequence) {
