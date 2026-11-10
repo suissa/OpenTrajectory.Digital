@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Attributes, Expansion, Relation, RelationKind, TrackOptions, TrackSnapshot, TrajectoryOptions, TrajectorySnapshot } from "./model.js";
 import type { TrajectoryExporter } from "./exporter.js";
+import { topologicalTracks as projectTopologicalTracks, validateRelation } from "./causal.js";
 const contexts = new AsyncLocalStorage<TrajectoryContext>();
 let nextId = 0;
 function id(prefix: string): string { nextId += 1; return prefix + "-" + Date.now().toString(36) + "-" + nextId; }
@@ -47,7 +48,17 @@ export class TrajectoryContext {
   trackMaybe<T>(options: TrackOptions | string, callback: () => T | Promise<T>): T | Promise<T> {
     const normalized: TrackOptions = typeof options === "string" ? { name: options } : options; const parent = this.activeTrack();
     const track = new ActiveTrack(this, normalized.name ?? "unnamed.track", parent?.id, parent ? parent.depth + 1 : 0, this.tracks.length + 1, { ...(normalized.attributes ?? {}) });
-    this.tracks.push(track); for (const cause of normalized.causes ?? []) this.relate(cause, track.id, "causes");
+    const causes = [...new Set(normalized.causes ?? [])];
+    const candidateTracks = [...this.tracks.map((item) => ({ id: item.id })), { id: track.id }];
+    for (const cause of causes) {
+      validateRelation(candidateTracks, this.relations, {
+        fromTrackId: cause,
+        toTrackId: track.id,
+        kind: "causes"
+      });
+    }
+    this.tracks.push(track);
+    for (const cause of causes) this.relate(cause, track.id, "causes");
     this.exporters.forEach((exporter) => exporter.onTrackStarted?.(track.snapshot()));
     const finish = (status: "ok" | "error", error?: unknown) => {
       track.status = status; if (error !== undefined) track.error = errorOf(error);
@@ -61,7 +72,18 @@ export class TrajectoryContext {
     } catch (error) { finish("error", error); throw error; }
   }
   async track<T>(options: TrackOptions | string, callback: () => T | Promise<T>): Promise<T> { return await this.trackMaybe(options, callback); }
-  relate(fromTrackId: string, toTrackId: string, kind: RelationKind, attributes?: Attributes): void { this.relations.push({ fromTrackId, toTrackId, kind, attributes: attributes ? { ...attributes } : undefined }); }
+  relate(fromTrackId: string, toTrackId: string, kind: RelationKind, attributes?: Attributes): void {
+    const relation: Relation = {
+      fromTrackId,
+      toTrackId,
+      kind,
+      attributes: attributes ? { ...attributes } : undefined
+    };
+    if (validateRelation(this.tracks, this.relations, relation)) this.relations.push(relation);
+  }
+  topologicalTracks(): TrackSnapshot[] {
+    return projectTopologicalTracks(this.snapshot());
+  }
   private activeTrack(): ActiveTrack | undefined { return (this as TrajectoryContext & { _active?: ActiveTrack })._active; }
   private withActive(track: ActiveTrack): TrajectoryContext { const child = Object.create(this) as TrajectoryContext & { _active?: ActiveTrack }; child._active = track; return child; }
 }
