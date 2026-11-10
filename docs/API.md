@@ -111,8 +111,19 @@ O encerramento dos spans usa `finally`: falhas ao definir status ou registrar ex
 | `TrajectoryStreamStore` | Reducer de snapshots, replay e eventos incrementais para clientes TUI/Web. |
 | `TrajectoryWebSocketServer` | Transporte WebSocket com binding local padrão e autorização obrigatória fora do loopback. |
 | `projectTrajectorySnapshot(snapshot)` | Projeção compartilhada de árvore, sequência temporal, ordem causal e relações. |
-| `TrajectoryStreamEvent` / `TrajectoryStreamFrame` | Envelope e frames do protocolo versionado. |
+| `TrajectoryStreamEventType` | União dos eventos versionados de Trajectory, Track, Expansion, Relation e falha. |
+| `TrajectoryStreamEvent` | Envelope de evento com sessão, sequência, timestamp, tipo e payload. |
+| `TrajectoryStreamFrame` | União de frame de snapshot, replay ou evento incremental. |
+| `TrajectoryStreamSnapshotFrame` | Snapshot de ressincronização com motivo e sequência atual. |
+| `TrajectoryStreamReplayFrame` | Batch de eventos após um cursor válido. |
+| `TrajectoryStreamEventFrame` | Frame que contém um evento incremental. |
+| `TrajectoryStreamConnection` | Frame inicial e subscription para o consumidor. |
+| `TrajectoryStreamHubOptions` | Configuração de sessão, buffer de replay, fila e retenção de snapshots. |
+| `TrajectoryTrackNode` | Nó da árvore hierárquica de Tracks. |
+| `TrajectoryProjection` | Projeção comum de árvore, sequência temporal, ordem causal e relações. |
 | `WebSocketServerFactory` | Adapter estrutural para uma implementação WebSocket fornecida pelo consumidor. |
+| `WebSocketServerLike` / `WebSocketConnectionLike` | Contratos estruturais mínimos de servidor e socket. |
+| `TrajectoryWebSocketServerOptions` | Host, porta, tamanho máximo de mensagem e autorização. |
 
 ## Lifecycle
 
