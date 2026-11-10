@@ -8,13 +8,19 @@ export interface TrackSnapshot {
   durationMs?: number; status: "running" | "ok" | "error"; depth: number; sequence: number;
   attributes: Attributes; expansions: Expansion[]; error?: { name: string; message: string };
 }
+export interface Destination {
+  id: string;
+  label: string;
+  status: "expected" | "satisfied" | "failed";
+  attributes: Attributes;
+}
 export interface TrajectorySnapshot {
   id: string; name: string; correlationId?: string; startedAt: string; endedAt?: string; durationMs?: number;
   /** Monotonic milliseconds elapsed since this Node.js process started, sampled at Trajectory creation. */
   processUptimeMs: number;
   /** @deprecated Use processUptimeMs. Kept as a compatibility alias in the 0.x API. */
   processStartupMs: number;
-  status: "running" | "ok" | "error"; attributes: Attributes; tracks: TrackSnapshot[]; relations: Relation[];
+  status: "running" | "ok" | "error"; attributes: Attributes; tracks: TrackSnapshot[]; relations: Relation[]; destination?: Destination;
 }
 export interface TrackOptions { name?: string; attributes?: Attributes; causes?: string[]; }
 export interface TrajectoryOptions { name?: string; correlationId?: string; attributes?: Attributes; }
