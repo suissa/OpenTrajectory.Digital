@@ -41,6 +41,7 @@ export interface TrajectoryWebSocketServerOptions {
 
 interface SubscribeRequest {
   type: "subscribe";
+  sessionId?: string;
   afterSequence?: number;
 }
 
@@ -168,11 +169,13 @@ export class TrajectoryWebSocketServer {
         const parsed = JSON.parse(message) as Partial<SubscribeRequest>;
         if (parsed.type !== "subscribe" ||
           (parsed.afterSequence !== undefined &&
-            (!Number.isSafeInteger(parsed.afterSequence) || parsed.afterSequence < 0))) {
+            (!Number.isSafeInteger(parsed.afterSequence) || parsed.afterSequence < 0 ||
+              typeof parsed.sessionId !== "string" || parsed.sessionId.length === 0))) {
           throw new Error("Invalid subscribe request.");
         }
         requestMessage = {
           type: "subscribe",
+          sessionId: parsed.sessionId,
           afterSequence: parsed.afterSequence
         };
       } catch {
@@ -182,7 +185,7 @@ export class TrajectoryWebSocketServer {
       }
 
       try {
-        const connection = this.hub.connect(requestMessage.afterSequence);
+        const connection = this.hub.connect(requestMessage.afterSequence, requestMessage.sessionId);
         subscribed = true;
         subscription = connection.subscription;
         socket.send(JSON.stringify(connection.initial));
