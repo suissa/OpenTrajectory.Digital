@@ -77,10 +77,22 @@ try {
   const consumerSource = `import {
   Expand,
   TrajectoryRuntime,
+  TrajectoryStreamExporter,
+  TrajectoryStreamHub,
+  TrajectoryStreamStore,
+  projectTrajectorySnapshot,
   type TrajectoryClock,
   type TrajectoryLimits,
   type TrajectorySnapshot
 } from "@opentrajectory/digital";
+import {
+  TrajectoryWebSocketServer,
+  type WebSocketServerFactory
+} from "@opentrajectory/digital/websocket";
+import {
+  TrajectoryStreamHub as BrowserStreamHub,
+  TrajectoryStreamStore as BrowserStreamStore
+} from "@opentrajectory/digital/streaming";
 
 const clock: TrajectoryClock = {
   monotonicNow: () => 1,
@@ -91,9 +103,25 @@ const limits: TrajectoryLimits = {
   maxExpansionsPerTrack: 5,
   maxTrackDepth: 2
 };
-const runtime = new TrajectoryRuntime({ clock, limits });
+const hub = new TrajectoryStreamHub();
+const runtime = new TrajectoryRuntime({
+  clock,
+  limits,
+  exporters: [new TrajectoryStreamExporter(hub)]
+});
+const store = new TrajectoryStreamStore();
+const browserHub = new BrowserStreamHub();
+const browserStore = new BrowserStreamStore();
 const snapshot: TrajectorySnapshot | undefined = runtime.current()?.snapshot();
-void snapshot;
+if (snapshot) projectTrajectorySnapshot(snapshot);
+const factory: WebSocketServerFactory = {
+  create: () => ({ on: () => undefined, close: (callback) => callback?.() })
+};
+const webSocketServer = new TrajectoryWebSocketServer(hub, factory);
+void store;
+void browserHub;
+void browserStore;
+void webSocketServer;
 Expand("consumer.typecheck");
 `;
   writeFileSync(join(consumer, "consumer.mts"), consumerSource);
@@ -109,19 +137,53 @@ Expand("consumer.typecheck");
     include: ["consumer.mts"]
   }, null, 2));
 
+  for (const modulePath of ["streaming.js", "causal.js", "model.js"]) {
+    const source = readFileSync(resolve(root, "dist", modulePath), "utf8");
+    if (/from ["']node:/.test(source) || /import ["']node:/.test(source)) {
+      throw new Error(`Browser-safe streaming dependency ${modulePath} imports a Node built-in.`);
+    }
+  }
+
   const tsc = resolve(root, "node_modules", "typescript", "bin", "tsc");
   execFileSync(process.execPath, [tsc, "-p", join(consumer, "tsconfig.json")], {
     cwd: consumer,
     stdio: "inherit"
   });
 
-  const runtimeCheck = `import { Expand, TrajectoryRuntime } from "@opentrajectory/digital";
-const runtime = new TrajectoryRuntime();
+  const runtimeCheck = `import {
+  Expand,
+  TrajectoryRuntime,
+  TrajectoryStreamExporter,
+  TrajectoryStreamHub,
+  TrajectoryStreamStore
+} from "@opentrajectory/digital";
+const hub = new TrajectoryStreamHub();
+const store = new TrajectoryStreamStore();
+const runtime = new TrajectoryRuntime({
+  exporters: [new TrajectoryStreamExporter(hub)]
+});
+const connection = hub.connect();
+store.apply(connection.initial);
 await runtime.trajectory("tarball.consumer", async () => {
   await runtime.current().track("consumer.track", () => Expand("consumer.ready"));
 });
+connection.subscription.close();
 `;
   execFileSync(process.execPath, ["--input-type=module", "-e", runtimeCheck], {
+    cwd: consumer,
+    stdio: "inherit"
+  });
+
+  const browserSubpathCheck = `import {
+  TrajectoryStreamHub,
+  TrajectoryStreamStore
+} from "@opentrajectory/digital/streaming";
+const hub = new TrajectoryStreamHub();
+const store = new TrajectoryStreamStore();
+store.apply(hub.connect().initial);
+if (store.sessionId !== hub.sessionId) throw new Error("Browser streaming subpath did not initialize.");
+`;
+  execFileSync(process.execPath, ["--input-type=module", "-e", browserSubpathCheck], {
     cwd: consumer,
     stdio: "inherit"
   });

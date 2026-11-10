@@ -107,6 +107,12 @@ const adapter = new OpenTelemetryAdapter(trace.getTracer("my-service"), {
 const runtime = new TrajectoryRuntime({ exporters: [adapter] });
 ```
 
+## Streaming em tempo real
+
+O cliente de navegador importa a camada sem dependências Node por `@opentrajectory/digital/streaming`; o servidor Node WebSocket fica em `@opentrajectory/digital/websocket`. O entrypoint principal continua sendo a API Node do runtime.
+
+O SDK inclui um protocolo versionado para acompanhar Trajectories em execução, com snapshot inicial, replay por sequência, ressincronização por backpressure e transporte WebSocket opcional. TUI e dashboard Web podem consumir o mesmo `TrajectoryStreamStore` e `projectTrajectorySnapshot`, garantindo a mesma árvore, ordem temporal e projeção causal. O servidor WebSocket usa `127.0.0.1:7331` por padrão; binding externo exige uma política explícita de autorização. Consulte [o protocolo de streaming](docs/STREAMING.md).
+
 ## Limites e relógio
 
 Por padrão, os limites são ilimitados. Podem ser configurados por runtime:

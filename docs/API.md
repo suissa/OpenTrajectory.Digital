@@ -1,6 +1,6 @@
 # API Reference
 
-Esta referência descreve a superfície exportada por `src/index.ts` na versão atual. Todos os símbolos podem ser importados de `@opentrajectory/digital`.
+Esta referência descreve a superfície pública do pacote. A API do runtime é exportada por `@opentrajectory/digital`; o módulo browser-safe de streaming fica em `@opentrajectory/digital/streaming`, e o servidor Node WebSocket em `@opentrajectory/digital/websocket`.
 
 ## Vocabulário: Expansion e Expand
 
@@ -105,6 +105,25 @@ O encerramento dos spans usa `finally`: falhas ao definir status ou registrar ex
 | `TrajectoryLimits` | Limites opcionais de bytes por mapa de atributos, Expansions por Track e profundidade. |
 | `TrajectoryLimitError` | Erro tipado lançado quando um limite configurado é excedido. |
 | `TrajectoryLimitCode` | Códigos de overflow de limites. |
+| `TrajectoryStreamHub` | Buffer de eventos, snapshots, replay, subscriptions e backpressure. |
+| `TrajectoryStreamExporter` | Exporter que converte hooks do runtime em eventos versionados. |
+| `TrajectoryStreamSubscription` | Leitor assíncrono de frames com fila limitada e ressincronização. |
+| `TrajectoryStreamStore` | Reducer de snapshots, replay e eventos incrementais para clientes TUI/Web. |
+| `TrajectoryWebSocketServer` | Transporte WebSocket com binding local padrão e autorização obrigatória fora do loopback. |
+| `projectTrajectorySnapshot(snapshot)` | Projeção compartilhada de árvore, sequência temporal, ordem causal e relações. |
+| `TrajectoryStreamEventType` | União dos eventos versionados de Trajectory, Track, Expansion, Relation e falha. |
+| `TrajectoryStreamEvent` | Envelope de evento com sessão, sequência, timestamp, tipo e payload. |
+| `TrajectoryStreamFrame` | União de frame de snapshot, replay ou evento incremental. |
+| `TrajectoryStreamSnapshotFrame` | Snapshot de ressincronização com motivo e sequência atual. |
+| `TrajectoryStreamReplayFrame` | Batch de eventos após um cursor válido. |
+| `TrajectoryStreamEventFrame` | Frame que contém um evento incremental. |
+| `TrajectoryStreamConnection` | Frame inicial e subscription para o consumidor. |
+| `TrajectoryStreamHubOptions` | Configuração de sessão, buffer de replay, fila e retenção de snapshots. |
+| `TrajectoryTrackNode` | Nó da árvore hierárquica de Tracks. |
+| `TrajectoryProjection` | Projeção comum de árvore, sequência temporal, ordem causal e relações. |
+| `WebSocketServerFactory` | Adapter estrutural para uma implementação WebSocket fornecida pelo consumidor. |
+| `WebSocketServerLike` / `WebSocketConnectionLike` | Contratos estruturais mínimos de servidor e socket. |
+| `TrajectoryWebSocketServerOptions` | Host, porta, tamanho máximo de mensagem e autorização. |
 
 ## Lifecycle
 
@@ -165,3 +184,10 @@ Não há renomeação nem depreciação de `Expansion` ou `Expand`: são conceit
 ## Roadmap — não disponível nesta versão
 
 `Destination`, `Journey` e `Step` são termos reservados para possíveis modelos ou aliases futuros. Não são exportados e não possuem contrato implementado.
+
+
+## Streaming realtime
+
+A API de streaming é documentada em [STREAMING.md](STREAMING.md). O protocolo usa `protocol: "open-trajectory"`, `version: 1`, `sessionId` e sequência monotônica por sessão. Conexões novas recebem snapshot; clientes que reconectam informam `afterSequence` e o `sessionId` anterior para receber replay ou snapshot de ressincronização. As filas de subscribers são limitadas; backpressure descarta eventos pendentes do cliente lento e entrega snapshot atualizado na próxima leitura.
+
+O servidor WebSocket é Node-only e não é reexportado pelo entrypoint principal para manter o módulo browser-safe isolado. O consumidor injeta uma `WebSocketServerFactory` (por exemplo, adaptada ao pacote `ws`). O binding padrão é `127.0.0.1:7331`; host não local exige callback `authorize`. TUI e dashboard Web devem aplicar `TrajectoryStreamStore` e `projectTrajectorySnapshot` para compartilhar a mesma semântica visual.
