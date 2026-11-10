@@ -42,6 +42,7 @@ Esta referência descreve a superfície exportada por `src/index.ts` na versão 
 | `TrajectoryContext.trackMaybe(options, callback)` | Method | Cria Track preservando retorno sync/async. |
 | `TrajectoryContext.relate(from, to, kind, attributes?)` | Method | Adiciona uma Relation ao snapshot da Trajectory. |
 | `TrajectoryContext.snapshot()` | Method | Produz snapshot com cópias rasas de atributos e relações. |
+| `TrajectoryContext.topologicalTracks()` | Method | Retorna Tracks em projeção topológica determinística sem reordenar o snapshot original. |
 
 Os métodos `runMaybe` e `trackMaybe` existem para a implementação dos decorators preservar o contrato síncrono. Para uso normal, prefira `trajectory` e `track`, que retornam Promise.
 
@@ -64,6 +65,10 @@ Hooks de exporter são síncronos. Exceções lançadas por um exporter não sã
 | `AttributeValue` | `string | number | boolean | null`. |
 | `Attributes` | Mapa de atributos string para AttributeValue. |
 | `RelationKind` | `causes | depends_on | expands | follows | derives_from`. |
+| `CausalRelationError` | Erro de validação com código, IDs e diagnóstico de ciclo. |
+| `CausalRelationErrorCode` | União dos códigos de erro de relação causal. |
+| `validateRelation(tracks, relations, relation)` | Valida uma aresta; retorna `false` quando ela já existe. |
+| `topologicalTracks(snapshot)` | Projeta os Tracks em ordem topológica determinística. |
 | `Relation` | Aresta direcionada entre dois Track IDs, com tipo e atributos opcionais. |
 | `Expansion` | Registro de marco dentro de um Track. |
 | `TrackSnapshot` | Estado observável de um Track, incluindo hierarquia, duração, atributos, expansions e erro. |
@@ -84,7 +89,23 @@ Erros são propagados ao chamador. O Track registra nome e mensagem do erro. `st
 
 ## Relações causais
 
-`Relation` é uma aresta direcionada: `fromTrackId` aponta para `toTrackId`. `TrackOptions.causes` cria relações `causes` de cada ID informado para o novo Track. `CausalLink`/ `relate` permite registrar os outros tipos. Na versão atual, a existência dos IDs, auto-relações, ciclos e ordenação topológica ainda não são validados pelo runtime; isso permanece como trabalho de validação do modelo causal.
+Uma `Relation` é uma aresta direcionada: `fromTrackId` é a origem semântica e `toTrackId` é o destino. Todas as relações representam uma precedência/influência da origem para o destino:
+
+| RelationKind | Semântica |
+| --- | --- |
+| `causes` | A origem causa o destino. |
+| `depends_on` | O destino depende da origem. |
+| `expands` | O destino expande ou detalha a origem. |
+| `follows` | O destino ocorre depois da origem. |
+| `derives_from` | O destino deriva da origem. |
+
+A hierarquia `parentId`/ `depth` descreve contenção estrutural; ela não cria automaticamente uma Relation causal. São dimensões independentes.
+
+`TrajectoryContext.relate()` e `CausalLink()` validam que ambos os IDs existem na mesma Trajectory, rejeitam autorrelações e rejeitam qualquer aresta que crie ciclo. Uma Relation repetida com a mesma origem, destino e tipo é idempotente (não duplica); o mesmo par de Tracks pode ter tipos diferentes de relação. `TrackOptions.causes` aplica a mesma validação para as relações criadas ao abrir um Track.
+
+Erros de validação lançam `CausalRelationError`, que inclui `code`, IDs envolvidos e, quando disponível, caminho do ciclo. Códigos: `UNKNOWN_SOURCE_TRACK`, `UNKNOWN_TARGET_TRACK`, `SELF_RELATION` e `CAUSAL_CYCLE`.
+
+`TrajectoryContext.topologicalTracks()` e a função exportada `topologicalTracks(snapshot)` retornam uma projeção topológica determinística. Desempates usam `sequence` original e depois ID. A projeção não altera `snapshot.tracks`: a ordem temporal original continua disponível. Snapshots externos inválidos também são verificados durante a projeção e ciclos causam `CausalRelationError`.
 
 ## Concorrência e isolamento
 
