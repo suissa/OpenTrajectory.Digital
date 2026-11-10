@@ -172,7 +172,7 @@ test("concurrent trajectories share one monotonic session sequence without mixin
     })
   ));
 
-  const connection = hub.connect(0);
+  const connection = hub.connect(0, hub.sessionId);
   assert.equal(connection.initial.kind, "replay");
   if (connection.initial.kind === "replay") {
     const events = connection.initial.events;
