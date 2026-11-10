@@ -10,7 +10,7 @@ export interface TrajectoryExporter {
 export class ConsoleTrajectoryExporter implements TrajectoryExporter {
   onTrajectoryStarted(trajectory: TrajectorySnapshot): void {
     console.log("◉ TRAJECTORY " + trajectory.name + " [" + trajectory.id + "]" + (trajectory.correlationId ? " correlation=" + trajectory.correlationId : ""));
-    console.log("  process startup before trajectory: " + trajectory.processStartupMs + "ms");
+    console.log("  process uptime at trajectory start: " + trajectory.processUptimeMs + "ms");
   }
   onTrackStarted(track: TrackSnapshot): void { console.log(this.prefix(track.depth) + "▶ " + track.name + this.attributes(track.attributes)); }
   onExpansion(track: TrackSnapshot, expansion: Expansion): void { console.log(this.prefix(track.depth + 1) + "↳ " + expansion.label + " +" + expansion.offsetMs + "ms" + this.attributes(expansion.attributes)); }
@@ -20,7 +20,7 @@ export class ConsoleTrajectoryExporter implements TrajectoryExporter {
   }
   onTrajectoryEnded(trajectory: TrajectorySnapshot): void {
     console.log("■ REPORT " + trajectory.name + ": " + trajectory.status + ", " + trajectory.tracks.length + " tracks, " + trajectory.relations.length + " causal links");
-    console.log("  trajectory work: " + trajectory.durationMs + "ms | process total through report: " + (trajectory.processStartupMs + (trajectory.durationMs ?? 0)) + "ms");
+    console.log("  trajectory work: " + trajectory.durationMs + "ms | process uptime through report: " + (trajectory.processUptimeMs + (trajectory.durationMs ?? 0)) + "ms");
   }
   private prefix(depth: number): string { return "  ".repeat(depth); }
   private attributes(attributes: Attributes): string { const entries = Object.entries(attributes); return entries.length ? " " + JSON.stringify(attributes) : ""; }

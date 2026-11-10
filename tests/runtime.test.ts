@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Track, Trajectory } from "../src/decorators.js";
+import { Expand, Track, Trajectory } from "../src/decorators.js";
 import { TrajectoryRuntime } from "../src/trajectory.js";
 import type { TrajectorySnapshot } from "../src/model.js";
+import { TrajectoryLimitError } from "../src/limits.js";
+import type { TrajectoryClock } from "../src/trajectory.js";
 
 test("runtime records nested tracks and expansions", async () => {
   let snapshot: TrajectorySnapshot | undefined;
@@ -216,4 +218,188 @@ test("invalid TrackOptions.causes does not leave a partial Track", async () => {
     (error: unknown) => error instanceof Error && error.message.includes("Unknown source Track")
   );
   assert.deepEqual(context.snapshot().tracks.map((track) => track.name), ["existing"]);
+});
+
+
+test("exporter snapshots and expansion payloads cannot mutate internal state", async () => {
+  let finalSnapshot!: TrajectorySnapshot;
+  const observedBySecondExporter: string[] = [];
+  const inputAttributes = { root: "original" };
+  const runtime = new TrajectoryRuntime({
+    exporters: [{
+      onExpansion(track, expansion) {
+        track.attributes.owner = "exporter-mutated";
+        expansion.attributes.marker = "exporter-mutated";
+      },
+      onRelation(snapshot, relation) {
+        snapshot.attributes.root = "exporter-mutated";
+        relation.attributes!.edge = "exporter-mutated";
+      },
+      onTrajectoryEnded(snapshot) {
+        finalSnapshot = snapshot;
+      }
+    }, {
+      onRelation(snapshot, relation) {
+        observedBySecondExporter.push(String(snapshot.attributes.root), String(relation.attributes?.edge));
+      }
+    }]
+  });
+
+  let context!: import("../src/trajectory.js").TrajectoryContext;
+  await runtime.trajectory({ name: "snapshot-isolation", attributes: inputAttributes }, async () => {
+    context = runtime.current()!;
+    inputAttributes.root = "caller-mutated";
+    await context.track({ name: "source", attributes: { owner: "original" } }, () => {
+      Expand("source.event", { marker: "original" });
+    });
+    await context.track("target", () => {});
+    const ids = context.snapshot().tracks.map((track) => track.id);
+    context.relate(ids[0]!, ids[1]!, "causes", { edge: "original" });
+
+    const external = context.snapshot();
+    external.attributes.root = "caller-mutated";
+    external.tracks[0]!.attributes.owner = "caller-mutated";
+    external.tracks[0]!.expansions[0]!.attributes.marker = "caller-mutated";
+    external.relations[0]!.attributes!.edge = "caller-mutated";
+  });
+
+  assert.equal(finalSnapshot.attributes.root, "original");
+  assert.equal(finalSnapshot.tracks[0]!.attributes.owner, "original");
+  assert.equal(finalSnapshot.tracks[0]!.expansions[0]!.attributes.marker, "original");
+  assert.equal(finalSnapshot.relations[0]!.attributes!.edge, "original");
+  assert.deepEqual(observedBySecondExporter, ["original", "original"]);
+});
+
+test("all exporters receive lifecycle finalization after a start hook fails", async () => {
+  const events: string[] = [];
+  const runtime = new TrajectoryRuntime({
+    exporters: [
+      {
+        onTrackStarted() { events.push("failing:start"); throw new Error("start hook failed"); },
+        onTrackEnded(track) { events.push("failing:end:" + track.status); },
+        onTrajectoryEnded(trajectory) { events.push("failing:trajectory:" + trajectory.status); }
+      },
+      {
+        onTrackStarted() { events.push("observer:start"); },
+        onTrackEnded(track) { events.push("observer:end:" + track.status); },
+        onTrajectoryEnded(trajectory) { events.push("observer:trajectory:" + trajectory.status); }
+      }
+    ]
+  });
+  let callbackRan = false;
+
+  await assert.rejects(
+    runtime.trajectory("exporter-start-failure", () =>
+      runtime.current()!.track("never-runs", () => { callbackRan = true; })
+    ),
+    (error: unknown) => error instanceof AggregateError
+  );
+
+  assert.equal(callbackRan, false);
+  assert.ok(events.includes("observer:start"));
+  assert.ok(events.includes("failing:end:error"));
+  assert.ok(events.includes("observer:end:error"));
+  assert.ok(events.includes("failing:trajectory:error"));
+  assert.ok(events.includes("observer:trajectory:error"));
+});
+
+test("exporter end failures do not prevent other exporters or trajectory cleanup", async () => {
+  const events: string[] = [];
+  const runtime = new TrajectoryRuntime({
+    exporters: [
+      {
+        onTrackEnded() { events.push("failing:end"); throw new Error("end hook failed"); },
+        onTrajectoryEnded() { events.push("failing:trajectory-end"); }
+      },
+      {
+        onTrackEnded() { events.push("observer:end"); },
+        onTrajectoryEnded() { events.push("observer:trajectory-end"); }
+      }
+    ]
+  });
+
+  await assert.rejects(
+    runtime.trajectory("exporter-end-failure", async () => {
+      await runtime.current()!.track("tracked", () => "complete");
+    }),
+    (error: unknown) => error instanceof AggregateError
+  );
+  assert.ok(events.includes("observer:end"));
+  assert.ok(events.includes("failing:trajectory-end"));
+  assert.ok(events.includes("observer:trajectory-end"));
+});
+
+test("injected monotonic clock gives deterministic duration and process uptime metrics", async () => {
+  let monotonic = 1_000;
+  let wall = 1_800_000_000_000;
+  const clock: TrajectoryClock = {
+    monotonicNow: () => monotonic,
+    wallTime: () => new Date(wall).toISOString()
+  };
+  let snapshot!: TrajectorySnapshot;
+  const runtime = new TrajectoryRuntime({
+    clock,
+    exporters: [{ onTrajectoryEnded(value) { snapshot = value; } }]
+  });
+
+  await runtime.trajectory("clocked", async () => {
+    monotonic += 5;
+    wall += 5;
+    await runtime.current()!.track("timed", () => {
+      monotonic += 2;
+      wall += 2;
+      Expand("tick", { step: 1 });
+      monotonic += 3;
+      wall += 3;
+    });
+  });
+
+  assert.equal(snapshot.processUptimeMs, 1_000);
+  assert.equal(snapshot.processStartupMs, snapshot.processUptimeMs);
+  assert.equal(snapshot.durationMs, 10);
+  assert.equal(snapshot.tracks[0]!.durationMs, 5);
+  assert.equal(snapshot.tracks[0]!.expansions[0]!.offsetMs, 2);
+});
+
+test("configured expansion, depth, and attribute limits fail before mutating state", async () => {
+  const expansionRuntime = new TrajectoryRuntime({
+    limits: { maxExpansionsPerTrack: 1 }
+  });
+  await expansionRuntime.trajectory("expansion-limit", async () => {
+    await expansionRuntime.current()!.track("limited", () => {
+      Expand("first");
+      assert.throws(
+        () => Expand("second"),
+        (error: unknown) => error instanceof TrajectoryLimitError &&
+          error.code === "MAX_EXPANSIONS_PER_TRACK"
+      );
+    });
+  });
+
+  const depthRuntime = new TrajectoryRuntime({ limits: { maxTrackDepth: 0 } });
+  let depthContext!: import("../src/trajectory.js").TrajectoryContext;
+  await depthRuntime.trajectory("depth-limit", async () => {
+    depthContext = depthRuntime.current()!;
+    await depthContext.track("root", async () => {
+      await assert.rejects(
+        depthRuntime.current()!.track("too-deep", () => {}),
+        (error: unknown) => error instanceof TrajectoryLimitError &&
+          error.code === "MAX_TRACK_DEPTH"
+      );
+    });
+  });
+  assert.deepEqual(depthContext.snapshot().tracks.map((track) => track.name), ["root"]);
+
+  const attributeRuntime = new TrajectoryRuntime({
+    limits: { maxAttributeBytes: 12 }
+  });
+  await attributeRuntime.trajectory("attribute-limit", async () => {
+    const context = attributeRuntime.current()!;
+    await assert.rejects(
+      context.track({ name: "oversized", attributes: { payload: "this is too large" } }, () => {}),
+      (error: unknown) => error instanceof TrajectoryLimitError &&
+        error.code === "MAX_ATTRIBUTE_BYTES"
+    );
+    assert.equal(context.snapshot().tracks.length, 0);
+  });
 });
