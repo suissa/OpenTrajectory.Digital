@@ -6,7 +6,7 @@ SDK TypeScript para instrumentar execuções como uma estrutura temporal e causa
 | --- | --- |
 | Trajectory | Execução observada, com correlation ID opcional |
 | Track | Unidade de trabalho dentro de uma Trajectory |
-| Expansion | Registro imutável de um marco ocorrido dentro de um Track |
+| Expansion | Registro de um marco ocorrido dentro de um Track |
 | Expand | Função que registra uma Expansion no Track ativo |
 | Relation | Relação causal ou de dependência entre Tracks |
 
