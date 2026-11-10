@@ -373,9 +373,8 @@ export class TrajectoryContext {
     };
     if (validateRelation(this.tracks, this.relations, relation)) {
       this.relations.push(relation);
-      const snapshot = this.snapshot();
       notifyExporters(this.exporters, "onRelation", (exporter) =>
-        exporter.onRelation?.(snapshot, {
+        exporter.onRelation?.(this.snapshot(), {
           ...relation,
           attributes: relation.attributes ? { ...relation.attributes } : undefined
         })
