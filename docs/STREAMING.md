@@ -57,7 +57,11 @@ import {
 const store = new TrajectoryStreamStore();
 store.apply(connection.initial);
 
-for await (const frame of framesFromYourTransport) {
+const connection = hub.connect();
+store.apply(connection.initial);
+while (true) {
+  const frame = await connection.subscription.next();
+  if (!frame) break;
   store.apply(frame);
   const projections = store.getProjections();
   // Render the same roots, children, sequence, causal order and relations
