@@ -19,6 +19,40 @@ export class CausalRelationError extends Error {
   }
 }
 
+function findCycle(relations: readonly Relation[]): string[] | undefined {
+  const outgoing = new Map<string, string[]>();
+  for (const relation of relations) {
+    const next = outgoing.get(relation.fromTrackId) ?? [];
+    next.push(relation.toTrackId);
+    outgoing.set(relation.fromTrackId, next);
+  }
+  const visited = new Set<string>();
+  const active = new Set<string>();
+  const path: string[] = [];
+  const visit = (current: string): string[] | undefined => {
+    if (active.has(current)) {
+      const start = path.indexOf(current);
+      return [...path.slice(start), current];
+    }
+    if (visited.has(current)) return undefined;
+    visited.add(current);
+    active.add(current);
+    path.push(current);
+    for (const next of outgoing.get(current) ?? []) {
+      const cycle = visit(next);
+      if (cycle) return cycle;
+    }
+    path.pop();
+    active.delete(current);
+    return undefined;
+  };
+  for (const relation of relations) {
+    const cycle = visit(relation.fromTrackId);
+    if (cycle) return cycle;
+  }
+  return undefined;
+}
+
 function findPath(
   relations: readonly Relation[],
   start: string,
@@ -166,11 +200,7 @@ export function topologicalTracks(
 
   if (ordered.length !== tracks.length) {
     const cycleNodes = tracks.filter((track) => indegree.get(track.id)! > 0).map((track) => track.id);
-    const cycle = findPath(
-      [...snapshot.relations],
-      cycleNodes[0]!,
-      cycleNodes[0]!
-    ) ?? cycleNodes;
+    const cycle = findCycle(snapshot.relations) ?? cycleNodes;
     throw new CausalRelationError(
       "CAUSAL_CYCLE",
       `Cannot produce a topological projection; causal cycle detected among Tracks: ${cycleNodes.join(", ")}.`,
