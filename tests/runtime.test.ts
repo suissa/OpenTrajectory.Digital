@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Track, Trajectory } from "../src/decorators.js";
 import { TrajectoryRuntime } from "../src/trajectory.js";
-import type { TrajectorySnapshot, TrackSnapshot } from "../src/model.js";
+import type { TrajectorySnapshot } from "../src/model.js";
 
 test("runtime records nested tracks and expansions", async () => {
   let snapshot: TrajectorySnapshot | undefined;
@@ -39,7 +39,6 @@ test("decorated async methods remain promises", async () => {
 });
 
 test("decorated method keeps this binding and records thrown errors", () => {
-  let ended: TrackSnapshot | undefined;
   class Service {
     count = 0;
     @Track("increment")
@@ -64,6 +63,7 @@ test("snapshot attributes are detached from caller-owned objects", async () => {
   const attributes = { source: "caller" };
   let snapshot: TrajectorySnapshot | undefined;
   const runtime = new TrajectoryRuntime({ exporters: [{ onTrajectoryEnded(value) { snapshot = value; } }] });
-  await runtime.trajectory({ name: "snapshot", attributes }, () => { attributes.source = "mutated"; });
-  assert.equal(snapshot?.attributes.source, "caller");
+  await runtime.trajectory({ name: "snapshot", attributes }, () => {});
+  snapshot!.attributes.source = "snapshot-mutated";
+  assert.equal(attributes.source, "caller");
 });
