@@ -83,7 +83,7 @@ test("reconnect replays retained events and falls back to a final snapshot when 
     await runtime.current()!.track("work", () => {});
   });
 
-  const stale = hub.connect(0);
+  const stale = hub.connect(0, hub.sessionId);
   assert.equal(stale.initial.kind, "snapshot");
   if (stale.initial.kind === "snapshot") {
     assert.equal(stale.initial.reason, "replay-window-expired");
