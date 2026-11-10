@@ -140,7 +140,8 @@ test("OpenTelemetry spans are ended even when status export throws", async () =>
     runtime.trajectory("root", async () => {
       await runtime.current()!.track("status-failure", () => {});
     }),
-    /status exporter failed/
+    (error: unknown) => error instanceof AggregateError &&
+      error.errors.some((item) => item instanceof Error && item.message === "status exporter failed")
   );
 
   const track = tracer.spans.find((span) => span.name === "status-failure")!;
