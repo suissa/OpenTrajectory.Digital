@@ -68,6 +68,24 @@ test("new stream clients receive a snapshot followed by incremental events", asy
     ["parent", "child"]
   );
   assert.equal(snapshot.relations.length, 1);
+  assert.equal(store.sessionId, hub.sessionId);
+  assert.equal(store.lastSequence, 8);
+  assert.throws(
+    () => store.apply({
+      kind: "event",
+      event: {
+        protocol: "open-trajectory",
+        version: 1,
+        sessionId: hub.sessionId,
+        sequence: 10,
+        timestamp: new Date().toISOString(),
+        trajectoryId: snapshot.id,
+        type: "trajectory.ended",
+        payload: snapshot
+      }
+    }),
+    /sequence gap/
+  );
   connection.subscription.close();
 });
 
@@ -82,6 +100,21 @@ test("reconnect replays retained events and falls back to a final snapshot when 
   await runtime.trajectory("completed", async () => {
     await runtime.current()!.track("work", () => {});
   });
+
+  const latestSequence = hub.snapshotFrame().sequence;
+  const replay = hub.connect(latestSequence - 2, hub.sessionId);
+  assert.equal(replay.initial.kind, "replay");
+  if (replay.initial.kind === "replay") {
+    assert.equal(replay.initial.events.length, 2);
+  }
+  replay.subscription.close();
+
+  const changedSession = hub.connect(latestSequence - 2, "previous-process-session");
+  assert.equal(changedSession.initial.kind, "snapshot");
+  if (changedSession.initial.kind === "snapshot") {
+    assert.equal(changedSession.initial.reason, "session-changed");
+  }
+  changedSession.subscription.close();
 
   const stale = hub.connect(0, hub.sessionId);
   assert.equal(stale.initial.kind, "snapshot");
