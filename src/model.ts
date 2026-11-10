@@ -10,9 +10,11 @@ export interface TrackSnapshot {
 }
 export interface TrajectorySnapshot {
   id: string; name: string; correlationId?: string; startedAt: string; endedAt?: string; durationMs?: number;
-  /** Elapsed Node-process time when this Trajectory started. It exposes runner/transpiler cold-start separately from instrumented work. */
+  /** Monotonic milliseconds elapsed since this Node.js process started, sampled at Trajectory creation. */
+  processUptimeMs: number;
+  /** @deprecated Use processUptimeMs. Kept as a compatibility alias in the 0.x API. */
   processStartupMs: number;
   status: "running" | "ok" | "error"; attributes: Attributes; tracks: TrackSnapshot[]; relations: Relation[];
 }
 export interface TrackOptions { name?: string; attributes?: Attributes; causes?: string[]; }
-export interface TrajectoryOptions { name?: string; correlationId?: string; attributes?: Attributes; autoReport?: boolean; }
+export interface TrajectoryOptions { name?: string; correlationId?: string; attributes?: Attributes; }
