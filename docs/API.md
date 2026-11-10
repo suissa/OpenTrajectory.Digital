@@ -188,6 +188,6 @@ Não há renomeação nem depreciação de `Expansion` ou `Expand`: são conceit
 
 ## Streaming realtime
 
-A API de streaming é documentada em [STREAMING.md](STREAMING.md). O protocolo usa `protocol: "open-trajectory"`, `version: 1`, `sessionId` e sequência monotônica por sessão. Conexões novas recebem snapshot; clientes que reconectam podem receber replay desde o último cursor ou snapshot de ressincronização. As filas de subscribers são limitadas; backpressure descarta eventos pendentes do cliente lento e entrega snapshot atualizado na próxima leitura.
+A API de streaming é documentada em [STREAMING.md](STREAMING.md). O protocolo usa `protocol: "open-trajectory"`, `version: 1`, `sessionId` e sequência monotônica por sessão. Conexões novas recebem snapshot; clientes que reconectam informam `afterSequence` e o `sessionId` anterior para receber replay ou snapshot de ressincronização. As filas de subscribers são limitadas; backpressure descarta eventos pendentes do cliente lento e entrega snapshot atualizado na próxima leitura.
 
 O servidor WebSocket não inclui implementação de socket no core. O consumidor injeta uma `WebSocketServerFactory` (por exemplo, adaptada ao pacote `ws`). O binding padrão é `127.0.0.1:7331`; host não local exige callback `authorize`. TUI e dashboard Web devem aplicar `TrajectoryStreamStore` e `projectTrajectorySnapshot` para compartilhar a mesma semântica visual.
