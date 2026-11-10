@@ -1,16 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Track, Trajectory } from "../src/decorators.js";
-import { TrajectoryRuntime, TrajectoryContext } from "../src/trajectory.js";
+import { TrajectoryRuntime } from "../src/trajectory.js";
+import type { TrajectorySnapshot, TrackSnapshot } from "../src/model.js";
 
 test("runtime records nested tracks and expansions", async () => {
-  const runtime = new TrajectoryRuntime();
+  let snapshot: TrajectorySnapshot | undefined;
+  const runtime = new TrajectoryRuntime({ exporters: [{ onTrajectoryEnded(value) { snapshot = value; } }] });
   await runtime.trajectory({ name: "root", correlationId: "corr-1" }, async () => {
     await runtime.current()!.track("parent", async () => {
       await runtime.current()!.track("child", () => "done");
     });
   });
-  assert.equal(runtime.current(), undefined);
+  assert.equal(snapshot?.correlationId, "corr-1");
+  assert.deepEqual(snapshot?.tracks.map((track) => [track.name, track.depth, track.sequence]), [
+    ["parent", 0, 1], ["child", 1, 2]
+  ]);
 });
 
 test("decorated synchronous methods preserve return type and value", () => {
@@ -18,8 +23,7 @@ test("decorated synchronous methods preserve return type and value", () => {
     @Track("sync")
     value(input: number) { return input + 1; }
   }
-  const service = new Service();
-  const result = service.value(41);
+  const result = new Service().value(41);
   assert.equal(result, 42);
   assert.equal(typeof (result as any)?.then, "undefined");
 });
@@ -29,11 +33,13 @@ test("decorated async methods remain promises", async () => {
     @Track("async")
     async value() { await Promise.resolve(); return "ok"; }
   }
-  assert.equal(await new Service().value(), "ok");
+  const result = new Service().value();
+  assert.equal(typeof (result as any)?.then, "function");
+  assert.equal(await result, "ok");
 });
 
 test("decorated method keeps this binding and records thrown errors", () => {
-  @Trajectory("service")
+  let ended: TrackSnapshot | undefined;
   class Service {
     count = 0;
     @Track("increment")
@@ -56,7 +62,7 @@ test("concurrent trajectories retain isolated async contexts", async () => {
 
 test("snapshot attributes are detached from caller-owned objects", async () => {
   const attributes = { source: "caller" };
-  let snapshot: ReturnType<NonNullable<typeof TrajectoryContext.current>["snapshot"]> | undefined;
+  let snapshot: TrajectorySnapshot | undefined;
   const runtime = new TrajectoryRuntime({ exporters: [{ onTrajectoryEnded(value) { snapshot = value; } }] });
   await runtime.trajectory({ name: "snapshot", attributes }, () => { attributes.source = "mutated"; });
   assert.equal(snapshot?.attributes.source, "caller");
