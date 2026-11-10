@@ -133,20 +133,36 @@ export class TrajectoryContext {
   readonly id = id("trajectory");
   readonly startedAt: string;
   readonly startedAtMs: number;
-  readonly tracks: ActiveTrack[] = [];
-  readonly relations: Relation[] = [];
+  private readonly tracks: ActiveTrack[] = [];
+  private readonly relations: Relation[] = [];
   status: "running" | "ok" | "error" = "running";
   endedAt?: string;
   durationMs?: number;
 
+  readonly name: string;
+  readonly options: TrajectoryOptions;
+  private readonly exporters: TrajectoryExporter[];
+  private readonly clock: TrajectoryClock;
+  private readonly limits: TrajectoryLimits;
+
   constructor(
-    readonly name: string,
-    readonly options: TrajectoryOptions = {},
-    private readonly exporters: TrajectoryExporter[] = [],
-    private readonly clock: TrajectoryClock = systemClock,
-    private readonly limits: TrajectoryLimits = {}
+    name: string,
+    options: TrajectoryOptions = {},
+    exporters: TrajectoryExporter[] = [],
+    clock: TrajectoryClock = systemClock,
+    limits: TrajectoryLimits = {}
   ) {
-    assertAttributeSize(options.attributes ?? {}, limits);
+    this.name = name;
+    this.options = Object.freeze({
+      ...options,
+      attributes: options.attributes
+        ? Object.freeze({ ...options.attributes })
+        : undefined
+    }) as TrajectoryOptions;
+    this.exporters = [...exporters];
+    this.clock = clock;
+    this.limits = { ...limits };
+    assertAttributeSize(this.options.attributes ?? {}, this.limits);
     this.startedAt = clock.wallTime();
     this.startedAtMs = clock.monotonicNow();
   }
@@ -404,8 +420,15 @@ export interface RuntimeOptions {
 }
 
 export class TrajectoryRuntime {
-  constructor(private readonly options: RuntimeOptions = {}) {
+  private readonly options: RuntimeOptions;
+
+  constructor(options: RuntimeOptions = {}) {
     validateTrajectoryLimits(options.limits);
+    this.options = {
+      ...options,
+      exporters: options.exporters ? [...options.exporters] : undefined,
+      limits: options.limits ? { ...options.limits } : undefined
+    };
   }
 
   trajectoryMaybe<T>(
