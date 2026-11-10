@@ -91,8 +91,8 @@ test("OpenTelemetry adapter creates a root, preserves track parents, expansions 
   const target = tracer.spans.find((span) => span.name === "target")!;
   const child = tracer.spans.find((span) => span.name === "child")!;
   assert.ok(root);
-  assert.equal(root.attributes.get("open_trajectory.correlation_id"), "corr-otel-1");
-  assert.equal(root.attributes.get("service"), "checkout");
+  assert.equal(root.options.attributes?.["open_trajectory.correlation_id"], "corr-otel-1");
+  assert.equal(root.options.attributes?.["service"], "checkout");
   assert.equal(source.parentContext && (source.parentContext as { parent?: unknown }).parent !== undefined, true);
   assert.equal(child.parentContext && (child.parentContext as { parent?: { spanId?: string } }).parent?.spanId, target.spanContext().spanId);
   assert.equal(target.options.links?.length, 1);
