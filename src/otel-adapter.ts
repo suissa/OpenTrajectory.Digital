@@ -60,6 +60,7 @@ export class OpenTelemetryAdapter implements TrajectoryExporter {
   private readonly trackSpans = new Map<string, OpenTelemetrySpanLike>();
   private readonly trackContexts = new Map<string, OpenTelemetrySpanContextLike>();
   private readonly pendingLinks = new Map<string, OpenTelemetrySpanLinkLike[]>();
+  private readonly pendingRelationAttributes = new Map<string, Array<{ kind: string; sourceTrackId: string; attributes: Record<string, string | number | boolean> }>>();
   private readonly trajectoryTracks = new Map<string, Set<string>>();
   private readonly correlationIds = new Map<string, string>();
 
@@ -115,6 +116,14 @@ export class OpenTelemetryAdapter implements TrajectoryExporter {
       parentContext
     );
     this.trackSpans.set(track.id, span);
+    for (const [index, relation] of (this.pendingRelationAttributes.get(track.id) ?? []).entries()) {
+      span.setAttribute(`open_trajectory.relation.${index}.kind`, relation.kind);
+      span.setAttribute(`open_trajectory.relation.${index}.source_track_id`, relation.sourceTrackId);
+      for (const [key, value] of Object.entries(relation.attributes)) {
+        span.setAttribute(`open_trajectory.relation.${index}.${key}`, value);
+      }
+    }
+    this.pendingRelationAttributes.delete(track.id);
     const spanContext = span.spanContext?.();
     if (spanContext) this.trackContexts.set(track.id, spanContext);
     this.trajectoryTracks.get(track.trajectoryId)?.add(track.id);
@@ -148,7 +157,7 @@ export class OpenTelemetryAdapter implements TrajectoryExporter {
       targetSpan.addLink(sourceContext, linkAttributes);
       return;
     }
-    if (sourceContext) {
+    if (sourceContext && !targetSpan) {
       const links = this.pendingLinks.get(relation.toTrackId) ?? [];
       links.push({ context: sourceContext, attributes: linkAttributes });
       this.pendingLinks.set(relation.toTrackId, links);
@@ -156,7 +165,18 @@ export class OpenTelemetryAdapter implements TrajectoryExporter {
     }
     if (targetSpan) {
       targetSpan.setAttribute("open_trajectory.relation." + relation.kind + ".source_track_id", relation.fromTrackId);
+      for (const [key, value] of Object.entries(clean(relation.attributes ?? {}))) {
+        targetSpan.setAttribute("open_trajectory.relation." + relation.kind + "." + key, value);
+      }
+      return;
     }
+    const pending = this.pendingRelationAttributes.get(relation.toTrackId) ?? [];
+    pending.push({
+      kind: relation.kind,
+      sourceTrackId: relation.fromTrackId,
+      attributes: clean(relation.attributes ?? {})
+    });
+    this.pendingRelationAttributes.set(relation.toTrackId, pending);
   }
 
   onTrackEnded(track: TrackSnapshot): void {
@@ -209,6 +229,7 @@ export class OpenTelemetryAdapter implements TrajectoryExporter {
           this.trackSpans.delete(trackId);
           this.trackContexts.delete(trackId);
           this.pendingLinks.delete(trackId);
+          this.pendingRelationAttributes.delete(trackId);
         }
         this.trajectoryTracks.delete(trajectory.id);
       }
