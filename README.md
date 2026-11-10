@@ -12,25 +12,29 @@ SDK TypeScript para instrumentar execuções como uma estrutura temporal e causa
 
 **Expansion** é o dado registrado. **Expand** é a operação que cria esse registro. Os nomes são intencionalmente distintos; nenhum deles é alias do outro.
 
-## Instalação e validação
+## Instalação como consumidor
 
 ```bash
 npm install @opentrajectory/digital
 ```
 
-Para validar o repositório:
+Os consumidores importam exclusivamente a API publicada em `dist`; os fontes e testes do repositório não fazem parte do pacote.
+
+## Desenvolvimento neste repositório
+
+Em um clone limpo:
 
 ```bash
-npm install
-npm run check
+npm ci
 npm run build
-npm test
 npm run example
-# ou tudo de uma vez:
+# verificação completa: tipos, build, testes, exemplo e instalação do tarball em projeto isolado
 npm run ci
 ```
 
-O SDK requer Node.js 20 ou superior. Os exemplos e snippets abaixo usam imports do pacote publicado.
+`npm run example` executa o exemplo mantido em `examples/` dentro do clone. `npm run pack:check` gera o tarball, verifica `npm pack --dry-run`, instala o arquivo em um projeto temporário e valida import ESM e declarações TypeScript como consumidor externo.
+
+O SDK requer Node.js 20 ou superior. Os exemplos de uso abaixo importam o pacote publicado.
 
 ## Instrumentação com decorators
 
@@ -125,4 +129,4 @@ Implementado: Trajectory, Track, Expansion/Expand, relações entre Tracks, deco
 
 Reservado para versões futuras: **Destination**, **Journey** e **Step**. Esses nomes não são classes, tipos ou APIs exportadas nesta versão. Não devem ser usados como se já fossem implementados.
 
-O SDK não persiste snapshots nem payloads de negócio. A integração com armazenamento é responsabilidade de exporters ou de componentes externos.
+O SDK não persiste snapshots nem payloads de negócio. A integração com armazenamento é responsabilidade de exporters ou de componentes externos. Consulte [o processo de release npm](docs/RELEASING.md) para versionamento, tags e publicação automatizada.
