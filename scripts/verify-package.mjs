@@ -137,6 +137,13 @@ Expand("consumer.typecheck");
     include: ["consumer.mts"]
   }, null, 2));
 
+  for (const modulePath of ["streaming.js", "causal.js", "model.js"]) {
+    const source = readFileSync(resolve(root, "dist", modulePath), "utf8");
+    if (/from ["']node:/.test(source) || /import ["']node:/.test(source)) {
+      throw new Error(`Browser-safe streaming dependency ${modulePath} imports a Node built-in.`);
+    }
+  }
+
   const tsc = resolve(root, "node_modules", "typescript", "bin", "tsc");
   execFileSync(process.execPath, [tsc, "-p", join(consumer, "tsconfig.json")], {
     cwd: consumer,
@@ -163,6 +170,20 @@ await runtime.trajectory("tarball.consumer", async () => {
 connection.subscription.close();
 `;
   execFileSync(process.execPath, ["--input-type=module", "-e", runtimeCheck], {
+    cwd: consumer,
+    stdio: "inherit"
+  });
+
+  const browserSubpathCheck = `import {
+  TrajectoryStreamHub,
+  TrajectoryStreamStore
+} from "@opentrajectory/digital/streaming";
+const hub = new TrajectoryStreamHub();
+const store = new TrajectoryStreamStore();
+store.apply(hub.connect().initial);
+if (store.sessionId !== hub.sessionId) throw new Error("Browser streaming subpath did not initialize.");
+`;
+  execFileSync(process.execPath, ["--input-type=module", "-e", browserSubpathCheck], {
     cwd: consumer,
     stdio: "inherit"
   });
