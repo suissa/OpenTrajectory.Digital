@@ -206,13 +206,14 @@ test("topological projection rejects cyclic external snapshots with a cycle path
 
 test("invalid TrackOptions.causes does not leave a partial Track", async () => {
   const runtime = new TrajectoryRuntime();
+  let context!: import("../src/trajectory.js").TrajectoryContext;
   await assert.rejects(
     runtime.trajectory("invalid-track-cause", async () => {
-      const context = runtime.current()!;
+      context = runtime.current()!;
       await context.track("existing", () => {});
       await context.track({ name: "invalid", causes: ["not-in-this-trajectory"] }, () => {});
     }),
     (error: unknown) => error instanceof Error && error.message.includes("Unknown source Track")
   );
-  // The failed Track is validated before insertion, so no ghost Track is emitted.
+  assert.deepEqual(context.snapshot().tracks.map((track) => track.name), ["existing"]);
 });
