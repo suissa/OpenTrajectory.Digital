@@ -55,8 +55,33 @@ Os métodos `runMaybe` e `trackMaybe` existem para a implementação dos decorat
 | `OpenTelemetryAdapter` | Class | Adapta Tracks e Expansions para spans através de um tracer compatível. |
 | `OpenTelemetryTracerLike` | Interface | Subconjunto estrutural de tracer necessário pelo adapter. |
 | `OpenTelemetrySpanLike` | Interface | Subconjunto estrutural de span necessário pelo adapter. |
+| `OpenTelemetryContextBridgeLike` | Interface | Bridge opcional para criar parent contexts OTel sem dependência no core. |
+| `OpenTelemetrySpanContextLike` | Interface | Identidade estrutural de um span usada em links. |
+| `OpenTelemetrySpanLinkLike` | Interface | Link causal estrutural enviado na criação de spans. |
+| `OpenTelemetrySpanOptionsLike` | Interface | Opções estruturais para atributos, links e timestamp inicial. |
 
-Hooks de exporter são síncronos. Exceções lançadas por um exporter não são isoladas pelo runtime e podem interromper a execução instrumentada. O adapter OpenTelemetry atual cria spans para Tracks, inclui IDs e atributos e encerra spans no fim do Track. O modelo atual não define parent span context explícito na interface estrutural.
+Hooks de exporter são síncronos. Exceções lançadas por um exporter não são isoladas pelo runtime e podem interromper a execução instrumentada.
+
+O `OpenTelemetryAdapter` cria um span raiz para cada Trajectory e spans para Tracks. Inclui IDs OpenTrajectory, `correlationId`, atributos, timestamps, duração, status e exceções. Expansions são exportadas como span events quando `addEvent` está disponível; caso contrário, são representadas por atributos.
+
+Para propagar parent context real entre o span raiz, Tracks e sub-Tracks sem adicionar dependência obrigatória, o construtor aceita um `OpenTelemetryContextBridgeLike` opcional. O bridge adapta `context.active()` e `trace.setSpan(context, span)` do pacote `@opentelemetry/api`:
+
+```ts
+import { context, trace } from "@opentelemetry/api";
+import { OpenTelemetryAdapter, TrajectoryRuntime } from "@opentrajectory/digital";
+
+const adapter = new OpenTelemetryAdapter(trace.getTracer("service"), {
+  active: () => context.active(),
+  setSpan: (active, span) => trace.setSpan(active, span as never)
+});
+const runtime = new TrajectoryRuntime({ exporters: [adapter] });
+```
+
+Sem o bridge, o adapter ainda cria spans raiz/Track e preserva `parent_track_id` como atributo, mas não consegue construir parent contexts OTel explícitos para a hierarquia.
+
+Relações causais são exportadas como span links quando o span de destino aceita `addLink` ou quando o link está disponível antes da criação do span (opção `links`). Quando o tracer não oferece esse suporte, a relação permanece preservada em atributos no span de destino. O adapter guarda SpanContexts de origem até o fim da Trajectory para permitir relações registradas depois que o span de origem terminou.
+
+O encerramento dos spans usa `finally`: falhas ao definir status ou registrar exceções não impedem a tentativa de `end()` nem a limpeza dos mapas internos. O core continua utilizável sem instalar OpenTelemetry; apenas o consumidor que usa um tracer real precisa instalar e fornecer `@opentelemetry/api`.
 
 ### Tipos e contratos de dados
 
