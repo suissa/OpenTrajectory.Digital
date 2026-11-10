@@ -1,7 +1,7 @@
 {
   "name": "@opentrajectory/digital",
   "version": "0.1.0",
-  "description": "Semantic causal temporal tracing for TypeScript.",
+  "description": "TypeScript SDK for semantic, causal, temporal execution tracing.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,7 +19,8 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test tests/*.test.ts",
     "example": "tsx examples/step-by-step.ts",
-    "ci": "npm run check && npm run build && npm test && npm run example"
+    "ci": "npm run check && npm run build && npm test && npm run example && npm run pack:check",
+    "pack:check": "node scripts/verify-package.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
@@ -37,5 +38,18 @@
     "temporal",
     "decorators"
   ],
-  "license": "Unlicense"
+  "license": "Unlicense",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/suissa/OpenTrajectory.Digital.git"
+  },
+  "homepage": "https://github.com/suissa/OpenTrajectory.Digital#readme",
+  "bugs": {
+    "url": "https://github.com/suissa/OpenTrajectory.Digital/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "sideEffects": false
 }
