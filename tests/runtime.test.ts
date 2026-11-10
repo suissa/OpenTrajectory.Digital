@@ -67,3 +67,111 @@ test("snapshot attributes are detached from caller-owned objects", async () => {
   snapshot!.attributes.source = "snapshot-mutated";
   assert.equal(attributes.source, "caller");
 });
+
+
+test("causal relation kinds are directed and duplicate edges are idempotent", async () => {
+  const runtime = new TrajectoryRuntime();
+  let context!: import("../src/trajectory.js").TrajectoryContext;
+  let ids: string[] = [];
+  await runtime.trajectory("relation-kinds", async () => {
+    context = runtime.current()!;
+    for (const name of ["a", "b", "c", "d", "e", "f"]) {
+      await context.track(name, () => {});
+    }
+    ids = context.snapshot().tracks.map((track) => track.id);
+  });
+
+  const kinds = ["causes", "depends_on", "expands", "follows", "derives_from"] as const;
+  kinds.forEach((kind, index) => {
+    context.relate(ids[index]!, ids[index + 1]!, kind);
+    context.relate(ids[index]!, ids[index + 1]!, kind);
+  });
+  assert.equal(context.snapshot().relations.length, kinds.length);
+  assert.deepEqual(context.topologicalTracks().map((track) => track.name), ["a", "b", "c", "d", "e", "f"]);
+});
+
+test("unknown, foreign, and self relations are rejected with diagnostics", async () => {
+  const runtime = new TrajectoryRuntime();
+  let context!: import("../src/trajectory.js").TrajectoryContext;
+  let ownId = "";
+  await runtime.trajectory("local", async () => {
+    context = runtime.current()!;
+    await context.track("local-track", () => {});
+    ownId = context.snapshot().tracks[0]!.id;
+  });
+
+  let foreignId = "";
+  await runtime.trajectory("foreign", async () => {
+    await runtime.current()!.track("foreign-track", () => {});
+    foreignId = runtime.current()!.snapshot().tracks[0]!.id;
+  });
+
+  const { CausalRelationError } = await import("../src/causal.js");
+  assert.throws(
+    () => context.relate("missing-source", ownId, "causes"),
+    (error: unknown) => error instanceof CausalRelationError && error.code === "UNKNOWN_SOURCE_TRACK"
+  );
+  assert.throws(
+    () => context.relate(ownId, foreignId, "causes"),
+    (error: unknown) => error instanceof CausalRelationError && error.code === "UNKNOWN_TARGET_TRACK"
+  );
+  assert.throws(
+    () => context.relate(ownId, ownId, "causes"),
+    (error: unknown) => error instanceof CausalRelationError && error.code === "SELF_RELATION"
+  );
+});
+
+test("causal cycles are rejected and never produce an invalid topological order", async () => {
+  const runtime = new TrajectoryRuntime();
+  let context!: import("../src/trajectory.js").TrajectoryContext;
+  let ids: string[] = [];
+  await runtime.trajectory("cycle", async () => {
+    context = runtime.current()!;
+    for (const name of ["a", "b", "c"]) await context.track(name, () => {});
+    ids = context.snapshot().tracks.map((track) => track.id);
+  });
+
+  context.relate(ids[0]!, ids[1]!, "causes");
+  context.relate(ids[1]!, ids[2]!, "depends_on");
+  const { CausalRelationError } = await import("../src/causal.js");
+  assert.throws(
+    () => context.relate(ids[2]!, ids[0]!, "follows"),
+    (error: unknown) => error instanceof CausalRelationError && error.code === "CAUSAL_CYCLE"
+  );
+  assert.deepEqual(context.topologicalTracks().map((track) => track.name), ["a", "b", "c"]);
+});
+
+test("topological projection is deterministic and does not reorder temporal snapshots", async () => {
+  const runtime = new TrajectoryRuntime();
+  let context!: import("../src/trajectory.js").TrajectoryContext;
+  let ids: string[] = [];
+  await runtime.trajectory("projection", async () => {
+    context = runtime.current()!;
+    for (const name of ["a", "b", "c", "d"]) await context.track(name, () => {});
+    ids = context.snapshot().tracks.map((track) => track.id);
+  });
+
+  context.relate(ids[2]!, ids[0]!, "causes");
+  context.relate(ids[0]!, ids[1]!, "derives_from");
+  const temporal = context.snapshot().tracks.map((track) => track.name);
+  const first = context.topologicalTracks().map((track) => track.name);
+  const second = context.topologicalTracks().map((track) => track.name);
+  assert.deepEqual(temporal, ["a", "b", "c", "d"]);
+  assert.deepEqual(first, ["c", "a", "b", "d"]);
+  assert.deepEqual(second, first);
+});
+
+test("TrackOptions.causes validates source IDs and creates directed edges", async () => {
+  const runtime = new TrajectoryRuntime();
+  let snapshot: TrajectorySnapshot | undefined;
+  await runtime.trajectory("track-causes", async () => {
+    const context = runtime.current()!;
+    await context.track("cause", () => {});
+    const causeId = context.snapshot().tracks[0]!.id;
+    await context.track({ name: "effect", causes: [causeId] }, () => {});
+    snapshot = context.snapshot();
+  });
+  assert.equal(snapshot?.relations.length, 1);
+  assert.equal(snapshot?.relations[0]?.kind, "causes");
+  assert.equal(snapshot?.relations[0]?.toTrackId, snapshot?.tracks[1]?.id);
+});
