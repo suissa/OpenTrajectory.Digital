@@ -50,23 +50,21 @@ Both terminal and browser clients should use the same reducer and projection fun
 
 ```ts
 import {
-  TrajectoryStreamHub,
   TrajectoryStreamStore,
   projectTrajectorySnapshot
-} from "@opentrajectory/digital";
+} from "@opentrajectory/digital/streaming";
 
-const hub = new TrajectoryStreamHub();
-const connection = hub.connect(); // For a remote client, receive frames from the WebSocket instead.
 const store = new TrajectoryStreamStore();
-store.apply(connection.initial);
-while (true) {
-  const frame = await connection.subscription.next();
-  if (!frame) break;
-  store.apply(frame);
+const socket = new WebSocket("ws://127.0.0.1:7331");
+socket.addEventListener("open", () => {
+  socket.send(JSON.stringify({ type: "subscribe" }));
+});
+socket.addEventListener("message", (message) => {
+  store.apply(JSON.parse(message.data));
   const projections = store.getProjections();
   // Render the same roots, children, sequence, causal order and relations
-  // in the TUI or browser dashboard.
-}
+  // in the browser dashboard.
+});
 ```
 
 `projectTrajectorySnapshot` exposes:
@@ -86,10 +84,12 @@ import { WebSocketServer } from "ws";
 import {
   TrajectoryStreamExporter,
   TrajectoryStreamHub,
-  TrajectoryWebSocketServer,
-  TrajectoryRuntime,
-  type WebSocketServerFactory
+  TrajectoryRuntime
 } from "@opentrajectory/digital";
+import {
+  TrajectoryWebSocketServer,
+  type WebSocketServerFactory
+} from "@opentrajectory/digital/websocket";
 
 const hub = new TrajectoryStreamHub();
 const runtime = new TrajectoryRuntime({
@@ -103,6 +103,8 @@ const server = new TrajectoryWebSocketServer(hub, factory, {
   port: 7331
 }).start();
 ```
+
+A browser client imports only the browser-safe streaming subpath; it does not import the Node runtime entrypoint. The server-side adapter is exported separately from the Node-only WebSocket subpath.
 
 A client sends one JSON message after connecting:
 
