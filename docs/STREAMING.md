@@ -59,7 +59,6 @@ const hub = new TrajectoryStreamHub();
 const connection = hub.connect(); // For a remote client, receive frames from the WebSocket instead.
 const store = new TrajectoryStreamStore();
 store.apply(connection.initial);
-store.apply(connection.initial);
 while (true) {
   const frame = await connection.subscription.next();
   if (!frame) break;
