@@ -1,8 +1,9 @@
-import type { Attributes, TrajectorySnapshot, TrackSnapshot, Expansion } from "./model.js";
+import type { Attributes, Relation, TrajectorySnapshot, TrackSnapshot, Expansion } from "./model.js";
 export interface TrajectoryExporter {
   onTrajectoryStarted?(trajectory: TrajectorySnapshot): void;
   onTrackStarted?(track: TrackSnapshot): void;
   onExpansion?(track: TrackSnapshot, expansion: Expansion): void;
+  onRelation?(trajectory: TrajectorySnapshot, relation: Relation): void;
   onTrackEnded?(track: TrackSnapshot): void;
   onTrajectoryEnded?(trajectory: TrajectorySnapshot): void;
 }
