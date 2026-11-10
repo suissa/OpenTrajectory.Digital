@@ -79,7 +79,14 @@ export class TrajectoryContext {
       kind,
       attributes: attributes ? { ...attributes } : undefined
     };
-    if (validateRelation(this.tracks, this.relations, relation)) this.relations.push(relation);
+    if (validateRelation(this.tracks, this.relations, relation)) {
+      this.relations.push(relation);
+      const snapshot = this.snapshot();
+      this.exporters.forEach((exporter) => exporter.onRelation?.(snapshot, {
+        ...relation,
+        attributes: relation.attributes ? { ...relation.attributes } : undefined
+      }));
+    }
   }
   topologicalTracks(): TrackSnapshot[] {
     return projectTopologicalTracks(this.snapshot());
