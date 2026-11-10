@@ -79,7 +79,7 @@ test("OpenTelemetry adapter creates a root, preserves track parents, expansions 
       const sourceId = context.snapshot().tracks[0]!.id;
       await context.track({ name: "target", causes: [sourceId] }, async () => {
         Expand("target.ready", { phase: "prepared" });
-        await context.track("child", () => Expand("child.done", { count: 1 }));
+        await runtime.current()!.track("child", () => Expand("child.done", { count: 1 }));
         const targetId = context.snapshot().tracks[1]!.id;
         context.relate(sourceId, targetId, "derives_from");
       });
