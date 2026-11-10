@@ -223,6 +223,8 @@ test("invalid TrackOptions.causes does not leave a partial Track", async () => {
 
 test("exporter snapshots and expansion payloads cannot mutate internal state", async () => {
   let finalSnapshot!: TrajectorySnapshot;
+  const observedBySecondExporter: string[] = [];
+  const inputAttributes = { root: "original" };
   const runtime = new TrajectoryRuntime({
     exporters: [{
       onExpansion(track, expansion) {
@@ -236,12 +238,17 @@ test("exporter snapshots and expansion payloads cannot mutate internal state", a
       onTrajectoryEnded(snapshot) {
         finalSnapshot = snapshot;
       }
+    }, {
+      onRelation(snapshot, relation) {
+        observedBySecondExporter.push(String(snapshot.attributes.root), String(relation.attributes?.edge));
+      }
     }]
   });
 
   let context!: import("../src/trajectory.js").TrajectoryContext;
-  await runtime.trajectory({ name: "snapshot-isolation", attributes: { root: "original" } }, async () => {
+  await runtime.trajectory({ name: "snapshot-isolation", attributes: inputAttributes }, async () => {
     context = runtime.current()!;
+    inputAttributes.root = "caller-mutated";
     await context.track({ name: "source", attributes: { owner: "original" } }, () => {
       Expand("source.event", { marker: "original" });
     });
@@ -260,6 +267,7 @@ test("exporter snapshots and expansion payloads cannot mutate internal state", a
   assert.equal(finalSnapshot.tracks[0]!.attributes.owner, "original");
   assert.equal(finalSnapshot.tracks[0]!.expansions[0]!.attributes.marker, "original");
   assert.equal(finalSnapshot.relations[0]!.attributes!.edge, "original");
+  assert.deepEqual(observedBySecondExporter, ["original", "original"]);
 });
 
 test("all exporters receive lifecycle finalization after a start hook fails", async () => {
