@@ -105,6 +105,14 @@ O encerramento dos spans usa `finally`: falhas ao definir status ou registrar ex
 | `TrajectoryLimits` | Limites opcionais de bytes por mapa de atributos, Expansions por Track e profundidade. |
 | `TrajectoryLimitError` | Erro tipado lançado quando um limite configurado é excedido. |
 | `TrajectoryLimitCode` | Códigos de overflow de limites. |
+| `TrajectoryStreamHub` | Buffer de eventos, snapshots, replay, subscriptions e backpressure. |
+| `TrajectoryStreamExporter` | Exporter que converte hooks do runtime em eventos versionados. |
+| `TrajectoryStreamSubscription` | Leitor assíncrono de frames com fila limitada e ressincronização. |
+| `TrajectoryStreamStore` | Reducer de snapshots, replay e eventos incrementais para clientes TUI/Web. |
+| `TrajectoryWebSocketServer` | Transporte WebSocket com binding local padrão e autorização obrigatória fora do loopback. |
+| `projectTrajectorySnapshot(snapshot)` | Projeção compartilhada de árvore, sequência temporal, ordem causal e relações. |
+| `TrajectoryStreamEvent` / `TrajectoryStreamFrame` | Envelope e frames do protocolo versionado. |
+| `WebSocketServerFactory` | Adapter estrutural para uma implementação WebSocket fornecida pelo consumidor. |
 
 ## Lifecycle
 
@@ -165,3 +173,10 @@ Não há renomeação nem depreciação de `Expansion` ou `Expand`: são conceit
 ## Roadmap — não disponível nesta versão
 
 `Destination`, `Journey` e `Step` são termos reservados para possíveis modelos ou aliases futuros. Não são exportados e não possuem contrato implementado.
+
+
+## Streaming realtime
+
+A API de streaming é documentada em [STREAMING.md](STREAMING.md). O protocolo usa `protocol: "open-trajectory"`, `version: 1`, `sessionId` e sequência monotônica por sessão. Conexões novas recebem snapshot; clientes que reconectam podem receber replay desde o último cursor ou snapshot de ressincronização. As filas de subscribers são limitadas; backpressure descarta eventos pendentes do cliente lento e entrega snapshot atualizado na próxima leitura.
+
+O servidor WebSocket não inclui implementação de socket no core. O consumidor injeta uma `WebSocketServerFactory` (por exemplo, adaptada ao pacote `ws`). O binding padrão é `127.0.0.1:7331`; host não local exige callback `authorize`. TUI e dashboard Web devem aplicar `TrajectoryStreamStore` e `projectTrajectorySnapshot` para compartilhar a mesma semântica visual.
