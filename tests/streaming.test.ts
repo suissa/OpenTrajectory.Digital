@@ -68,8 +68,28 @@ test("new stream clients receive a snapshot followed by incremental events", asy
     ["parent", "child"]
   );
   assert.equal(snapshot.relations.length, 1);
+  const destination = {
+    id: "destination-dashboard",
+    label: "Dashboard",
+    status: "satisfied" as const,
+    attributes: { intentId: "intent-login" }
+  };
+  store.apply({
+    kind: "event",
+    event: {
+      protocol: "open-trajectory",
+      version: 1,
+      sessionId: hub.sessionId,
+      sequence: 9,
+      timestamp: new Date().toISOString(),
+      trajectoryId: snapshot.id,
+      type: "trajectory.ended",
+      payload: { ...snapshot, destination }
+    }
+  });
+  assert.deepEqual(store.getSnapshot(snapshot.id)?.destination, destination);
   assert.equal(store.sessionId, hub.sessionId);
-  assert.equal(store.lastSequence, 8);
+  assert.equal(store.lastSequence, 9);
   assert.throws(
     () => store.apply({
       kind: "event",
@@ -77,7 +97,7 @@ test("new stream clients receive a snapshot followed by incremental events", asy
         protocol: "open-trajectory",
         version: 1,
         sessionId: hub.sessionId,
-        sequence: 10,
+        sequence: 11,
         timestamp: new Date().toISOString(),
         trajectoryId: snapshot.id,
         type: "trajectory.ended",
