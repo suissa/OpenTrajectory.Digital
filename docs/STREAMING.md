@@ -40,7 +40,7 @@ Failure events are emitted before their corresponding ended event. The ended pay
 
 A new client calls `hub.connect()`. The returned `initial` frame is a full snapshot. It then reads incremental event frames from `subscription.next()`.
 
-A reconnecting client passes its last applied sequence: `hub.connect(lastSequence)`. If the requested cursor is still in the ring buffer, the initial frame contains only events after that sequence. If the cursor is too old or belongs to a future sequence, the hub sends a fresh snapshot. A process restart changes `sessionId`; always resynchronize on a session change.
+A reconnecting client passes both its last applied sequence and the session ID: `hub.connect(lastSequence, sessionId)`. If the requested cursor is still in the ring buffer and the session matches, the initial frame contains only events after that sequence. If the cursor is too old, belongs to a future sequence, or the process session changed, the hub sends a fresh snapshot. A cursor without its session ID is never replayed. The store tracks the applied session and sequence and rejects gaps so clients can request a snapshot instead of silently rendering stale state.
 
 The event ring buffer is bounded by `maxBufferEvents` (default 2,048). Each subscriber has a bounded queue `maxQueuedEvents` (default 256). If a subscriber falls behind, its queued events are discarded and its next read returns a current snapshot with reason `backpressure`. This prevents a slow TUI/browser from blocking instrumented execution. Snapshot retention defaults to 512 Trajectories; completed snapshots are evicted first, while active snapshots are retained.
 
@@ -108,10 +108,10 @@ const server = new TrajectoryWebSocketServer(hub, factory, {
 A client sends one JSON message after connecting:
 
 ```json
-{ "type": "subscribe", "afterSequence": 41 }
+{ "type": "subscribe", "sessionId": "process-session-id", "afterSequence": 41 }
 ```
 
-Omit `afterSequence` for a fresh snapshot. The server sends the initial snapshot/replay frame, then event frames. Reconnect by opening a new socket and sending the last applied sequence.
+Omit `afterSequence` for a fresh snapshot. When resuming, send both `sessionId` and `afterSequence`; a cursor without its session ID is rejected. The server sends the initial snapshot/replay frame, then event frames. Reconnect by opening a new socket and sending the last applied sequence and session ID.
 
 Defaults: host `127.0.0.1`, port `7331`, inbound message limit 16 KiB. Port 0 is accepted for ephemeral test ports. Binding to any non-loopback host requires an explicit `authorize(request)` callback. Use TLS at a trusted reverse proxy for remote deployments; the SDK does not terminate TLS or prescribe an authentication scheme.
 
