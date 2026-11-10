@@ -47,7 +47,7 @@ interface SubscribeRequest {
 function toText(data: unknown): string {
   if (typeof data === "string") return data;
   if (Buffer.isBuffer(data)) return data.toString("utf8");
-  if (Array.isArray(data) && data.every((item) => Buffer.isBuffer(item))) {
+  if (Array.isArray(data) && data.every((item): item is Buffer => Buffer.isBuffer(item))) {
     return Buffer.concat(data).toString("utf8");
   }
   if (data instanceof ArrayBuffer) return Buffer.from(data).toString("utf8");
@@ -129,8 +129,13 @@ export class TrajectoryWebSocketServer {
       socket.close(1001, "server shutting down");
       return;
     }
-    if (this.authorize && !this.authorize(request)) {
-      socket.close(1008, "unauthorized");
+    try {
+      if (this.authorize && !this.authorize(request)) {
+        socket.close(1008, "unauthorized");
+        return;
+      }
+    } catch {
+      socket.close(1008, "authorization failed");
       return;
     }
 
@@ -154,7 +159,13 @@ export class TrajectoryWebSocketServer {
 
       let requestMessage: SubscribeRequest;
       try {
-        const parsed = JSON.parse(toText(data)) as Partial<SubscribeRequest>;
+        const message = toText(data);
+        if (Buffer.byteLength(message, "utf8") > this.maxPayloadBytes) {
+          socket.close(1009, "message exceeds configured maxPayloadBytes");
+          cleanup();
+          return;
+        }
+        const parsed = JSON.parse(message) as Partial<SubscribeRequest>;
         if (parsed.type !== "subscribe" ||
           (parsed.afterSequence !== undefined &&
             (!Number.isSafeInteger(parsed.afterSequence) || parsed.afterSequence < 0))) {
